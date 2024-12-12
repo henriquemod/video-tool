@@ -2,22 +2,25 @@ import sys
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QSlider, QHBoxLayout
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import QUrl, Qt
+from PyQt5.QtCore import QUrl, Qt, QDir
 
 class VideoPlayer(QWidget):
     def __init__(self):
         super().__init__()
 
+        # Initialize outputFolder with a default path
+        self.outputFolder = QDir.currentPath()
+
         # Set up the video player
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
-        videoWidget = QVideoWidget()
+        self.videoWidget = QVideoWidget()
 
         # Set up the layout
         layout = QVBoxLayout()
-        layout.addWidget(videoWidget)
+        layout.addWidget(self.videoWidget)
 
         # Set up the media player
-        self.mediaPlayer.setVideoOutput(videoWidget)
+        self.mediaPlayer.setVideoOutput(self.videoWidget)
 
         # Add a slider for video seeking with custom style for macOS
         self.positionSlider = QSlider(Qt.Horizontal)
@@ -59,6 +62,12 @@ class VideoPlayer(QWidget):
         sliderLayout.addWidget(self.currentTimeLabel)
         sliderLayout.addWidget(self.positionSlider)
         sliderLayout.addWidget(self.totalTimeLabel)
+
+        # Add screenshot button
+        self.screenshotButton = QPushButton("Screenshot")
+        self.screenshotButton.clicked.connect(self.capture_screenshot)
+        sliderLayout.addWidget(self.screenshotButton)
+
         layout.addLayout(sliderLayout)
 
         # Add playback controls
@@ -114,4 +123,23 @@ class VideoPlayer(QWidget):
         minutes = seconds // 60
         seconds = seconds % 60
         return f"{int(minutes):02}:{int(seconds):02}"
+
+    def capture_screenshot(self):
+        """Capture the current frame and save it as an image."""
+        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
+            # Grab the current frame from the video widget
+            video_frame = self.videoWidget.grab()
+            if not video_frame.isNull():
+                # Define the path to save the screenshot
+                timestamp = self.ms_to_time(self.mediaPlayer.position()).replace(":", "-")
+                output_path = f"{self.outputFolder}/screenshot_{timestamp}.png"
+                # Save the frame as an image
+                if video_frame.save(output_path):
+                    print(f"Screenshot captured and saved to: {output_path}")
+                else:
+                    print("Failed to save the screenshot.")
+            else:
+                print("Failed to capture the frame.")
+        else:
+            print("Video is not playing. Cannot capture screenshot.")
  

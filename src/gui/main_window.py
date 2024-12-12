@@ -9,6 +9,8 @@ from PyQt5.QtWidgets import (
     QAction,
 )
 from .video_player import VideoPlayer
+from .settings import SettingsDialog
+from PyQt5.QtCore import QDir
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -52,6 +54,11 @@ class MainWindow(QMainWindow):
         open_video_action.triggered.connect(self.load_video)
         file_menu.addAction(open_video_action)
 
+        # Add settings action
+        settingsAction = QAction("Settings", self)
+        settingsAction.triggered.connect(self.open_settings)
+        file_menu.addAction(settingsAction)
+
     def load_video(self):
         """Open a file dialog to select a video file."""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -62,3 +69,13 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.videoPlayer.load_video(file_path) 
+
+    def open_settings(self):
+        """Open the settings dialog."""
+        settingsDialog = SettingsDialog(self)
+        if settingsDialog.exec_():
+            # Retrieve settings here
+            self.videoPlayer.allowCrop = settingsDialog.cropCheckbox.isChecked()
+            output_folder = settingsDialog.outputFolderLabel.text().replace("Output Folder: ", "")
+            self.videoPlayer.outputFolder = output_folder if output_folder else QDir.currentPath()
+            print(f"Settings saved: Crop Images - {self.videoPlayer.allowCrop}, Output Folder - {self.videoPlayer.outputFolder}")
