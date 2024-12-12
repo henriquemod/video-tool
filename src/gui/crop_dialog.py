@@ -20,6 +20,12 @@ class CropDialog(QDialog):
         self.image_label = QLabel()
         self.pixmap = QPixmap(self.image_path)
         
+        # Check if the pixmap is valid
+        if self.pixmap.isNull():
+            QMessageBox.critical(self, "Error", "Failed to load image for cropping.")
+            self.reject()
+            return
+        
         # Scale pixmap if too large while maintaining aspect ratio
         scaled_pixmap = self.pixmap.scaled(800, 600, Qt.KeepAspectRatio, 
                                          Qt.SmoothTransformation)
