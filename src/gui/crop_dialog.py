@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton, 
                            QLabel, QRubberBand, QMessageBox)
 from PyQt5.QtCore import Qt, QRect
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap
 import os
 
 class CropDialog(QDialog):

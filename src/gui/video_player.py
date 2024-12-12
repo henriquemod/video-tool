@@ -7,8 +7,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import QUrl, Qt, QDir, pyqtSlot
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import QUrl, Qt, QDir
 from .crop_dialog import CropDialog
 
 """

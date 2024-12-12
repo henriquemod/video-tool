@@ -2,10 +2,7 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QVBoxLayout,
     QWidget,
-    QPushButton,
     QFileDialog,
-    QMenuBar,
-    QMenu,
     QAction,
 )
 from .video_player import VideoPlayer
