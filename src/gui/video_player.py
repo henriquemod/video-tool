@@ -1,14 +1,16 @@
 import cv2
 import sys
 import threading
+import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
-    QHBoxLayout, QFileDialog, QMessageBox
+    QHBoxLayout, QFileDialog, QMessageBox, QDialog
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir, pyqtSlot
-from PyQt5.QtGui import QImage
+from PyQt5.QtGui import QImage, QPixmap
+from .crop_dialog import CropDialog
 
 class VideoPlayer(QWidget):
     def __init__(self):
@@ -74,7 +76,7 @@ class VideoPlayer(QWidget):
 
         # Add screenshot button
         self.screenshotButton = QPushButton("Screenshot")
-        self.screenshotButton.clicked.connect(self.capture_screenshot)
+        self.screenshotButton.clicked.connect(self.take_screenshot)
         sliderLayout.addWidget(self.screenshotButton)
 
         layout.addLayout(sliderLayout)
@@ -204,46 +206,30 @@ class VideoPlayer(QWidget):
             self.showFullScreen()
             self.fullscreenButton.setText("Exit Fullscreen")
 
-    def capture_screenshot(self):
-        """Capture the current frame and save it as an image using OpenCV."""
-        if self.cap and self.cap.isOpened():
-            position_ms = self.mediaPlayer.position()
-            fps = self.cap.get(cv2.CAP_PROP_FPS)
-            if fps == 0:
-                QMessageBox.warning(self, "Error", "Cannot retrieve FPS from video.")
-                return
-            frame_number = int((position_ms / 1000.0) * fps)
-            # Ensure frame_number is within the video length
-            total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            if frame_number >= total_frames:
-                frame_number = total_frames - 1
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-            ret, frame = self.cap.read()
-            if ret:
-                # Convert BGR (OpenCV format) to RGB
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                # Convert to QImage
-                height, width, channel = frame.shape
-                bytes_per_line = 3 * width
-                q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
-                
-                # Open file dialog to choose save location and format
-                options = QFileDialog.Options()
-                save_path, selected_filter = QFileDialog.getSaveFileName(
-                    self, "Save Screenshot",
-                    f"screenshot_{self.ms_to_time(position_ms).replace(':', '-')}",
-                    "PNG Files (*.png);;JPEG Files (*.jpg *.jpeg);;BMP Files (*.bmp);;All Files (*)",
-                    options=options
-                )
-                if save_path:
-                    if q_img.save(save_path):
-                        QMessageBox.information(self, "Success", f"Screenshot saved to:\n{save_path}")
-                    else:
-                        QMessageBox.warning(self, "Save Failed", "Failed to save the screenshot.")
-            else:
-                QMessageBox.warning(self, "Error", "Failed to read the frame from OpenCV.")
-        else:
-            QMessageBox.warning(self, "Error", "Video is not loaded with OpenCV. Cannot capture screenshot.")
+    def take_screenshot(self):
+        """Capture the current frame as a screenshot."""
+        if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
+            return
+            
+        # Get the current video frame
+        video_frame = self.videoWidget.grab()
+        
+        if hasattr(self, 'allowCrop') and self.allowCrop:
+            # Open crop dialog
+            crop_dialog = CropDialog(video_frame, self)
+            if crop_dialog.exec_() == QDialog.Accepted:
+                cropped_pixmap = crop_dialog.get_cropped_pixmap()
+                if cropped_pixmap:
+                    video_frame = cropped_pixmap
+        
+        # Generate filename with timestamp
+        timestamp = self.mediaPlayer.position()
+        filename = f"screenshot_{timestamp}.png"
+        save_path = os.path.join(self.outputFolder, filename)
+        
+        # Save the screenshot
+        video_frame.save(save_path, "PNG")
+        print(f"Screenshot saved: {save_path}")
 
     def closeEvent(self, event):
         """Handle the widget closing."""
