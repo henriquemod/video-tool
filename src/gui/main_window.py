@@ -1,4 +1,13 @@
-from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QPushButton, QFileDialog
+from PyQt5.QtWidgets import (
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
+    QPushButton,
+    QFileDialog,
+    QMenuBar,
+    QMenu,
+    QAction,
+)
 from .video_player import VideoPlayer
 
 class MainWindow(QMainWindow):
@@ -18,15 +27,38 @@ class MainWindow(QMainWindow):
         self.videoPlayer = VideoPlayer()
         layout.addWidget(self.videoPlayer)
 
-        # Load Video Button
-        loadButton = QPushButton("Load Video")
-        loadButton.clicked.connect(self.load_video)
-        layout.addWidget(loadButton)
-
         central_widget.setLayout(layout)
+
+        # Set up the menu bar
+        self.setup_menu_bar()
+
+    def setup_menu_bar(self):
+        """Create and configure the menu bar with 'App' and 'File' menus."""
+        menu_bar = self.menuBar()
+
+        # 'App' Menu
+        app_menu = menu_bar.addMenu("App")
+
+        # Exit Action
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        app_menu.addAction(exit_action)
+
+        # 'File' Menu
+        file_menu = menu_bar.addMenu("File")
+
+        # Open Video Action
+        open_video_action = QAction("Open Video", self)
+        open_video_action.triggered.connect(self.load_video)
+        file_menu.addAction(open_video_action)
 
     def load_video(self):
         """Open a file dialog to select a video file."""
-        file_path, _ = QFileDialog.getOpenFileName(self, "Open Video File", "", "Video Files (*.mp4 *.avi *.mkv *.mov)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Video File",
+            "",
+            "Video Files (*.mp4 *.avi *.mkv *.mov)"
+        )
         if file_path:
             self.videoPlayer.load_video(file_path) 
