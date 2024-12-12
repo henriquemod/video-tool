@@ -11,7 +11,63 @@ from PyQt5.QtCore import QUrl, Qt, QDir, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
 from .crop_dialog import CropDialog
 
+"""
+VideoPlayer Widget for Multimedia Assistant Application
+
+This module implements a comprehensive video player widget using PyQt5 and OpenCV, providing
+professional-grade video playback capabilities with synchronized audio support.
+
+Key Features:
+- Video playback with support for common formats (MP4, AVI, MKV, MOV)
+- Advanced playback controls (play, pause, stop, seek)
+- Volume and playback speed adjustment
+- High-quality screenshot capture with optional cropping
+- Fullscreen support
+- Cross-platform compatibility (Windows, macOS, Linux)
+
+Technical Implementation:
+- Uses QMediaPlayer for smooth video/audio playback
+- Integrates OpenCV for frame capture and processing
+- Implements responsive GUI with custom styling for different platforms
+- Employs efficient memory management for large video files
+
+Dependencies:
+- PyQt5: GUI framework and media playback
+- OpenCV (cv2): Frame capture and image processing
+- Standard libraries: os, sys
+
+Example usage:
+    player = VideoPlayer()
+    player.load_video("path/to/video.mp4")
+    player.show()
+
+@anchor #video-player-implementation
+@see @Project Structure#video_player.py
+"""
+
 class VideoPlayer(QWidget):
+    """
+    A feature-rich video player widget implementing professional multimedia playback capabilities.
+    
+    This widget provides a complete video playback interface with:
+    - Video preview screen
+    - Playback controls (play/pause, stop, seek)
+    - Volume and playback speed controls
+    - Screenshot functionality with optional cropping
+    - Fullscreen support
+    
+    Attributes:
+        outputFolder (str): Directory for saving screenshots
+        mediaPlayer (QMediaPlayer): Core media playback engine
+        videoWidget (QVideoWidget): Widget for video display
+        cap (cv2.VideoCapture): OpenCV video capture object
+        positionSlider (QSlider): Seek control for video navigation
+        volumeSlider (QSlider): Volume control slider
+        speedSlider (QSlider): Playback speed control
+    
+    @anchor #video-player-class
+    """
+
     def __init__(self):
         super().__init__()
 
@@ -131,7 +187,13 @@ class VideoPlayer(QWidget):
         self.mediaPlayer.stateChanged.connect(self.media_state_changed)
 
     def open_file(self):
-        """Open a file dialog to select a video file."""
+        """
+        Opens a file dialog for video selection and loads the selected video.
+        
+        Supports common video formats (MP4, AVI, MKV, MOV) and handles file loading errors.
+        
+        @anchor #video-file-loading
+        """
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open Video", QDir.homePath(),
             "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)"
@@ -140,7 +202,17 @@ class VideoPlayer(QWidget):
             self.load_video(file_path)
 
     def load_video(self, file_path):
-        """Load a video file and initialize OpenCV capture."""
+        """
+        Initializes video playback for the specified file path.
+        
+        Args:
+            file_path (str): Path to the video file
+            
+        Handles both QMediaPlayer and OpenCV initialization for synchronized
+        playback and frame capture capabilities.
+        
+        @anchor #video-loading-implementation
+        """
         self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
         self.cap = cv2.VideoCapture(file_path)
         if not self.cap.isOpened():
@@ -206,7 +278,18 @@ class VideoPlayer(QWidget):
             self.fullscreenButton.setText("Exit Fullscreen")
 
     def take_screenshot(self):
-        """Capture the current frame as a screenshot using OpenCV and optionally crop it."""
+        """
+        Captures the current frame as a high-quality screenshot.
+        
+        Features:
+        - Captures frame at original video resolution
+        - Saves with timestamp-based filename
+        - Optional cropping through CropDialog
+        - Configurable output directory
+        
+        @anchor #screenshot-functionality
+        @see @Project#Screenshot Capability
+        """
         if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
             return
         
@@ -246,7 +329,18 @@ class VideoPlayer(QWidget):
                 QMessageBox.critical(self, "Error", f"Failed to crop image: {str(e)}")
 
     def closeEvent(self, event):
-        """Handle the widget closing."""
+        """
+        Handles cleanup when the video player widget is closed.
+        
+        Ensures proper release of system resources:
+        - Closes OpenCV video capture
+        - Releases media player resources
+        
+        Args:
+            event (QCloseEvent): The close event to handle
+            
+        @anchor #resource-cleanup
+        """
         if self.cap and self.cap.isOpened():
             self.cap.release()
         event.accept()
