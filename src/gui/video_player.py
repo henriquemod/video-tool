@@ -1,8 +1,10 @@
+import cv2
 import sys
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QSlider, QHBoxLayout
-from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent, QVideoProbe
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir
+from PyQt5.QtGui import QImage
 
 class VideoPlayer(QWidget):
     def __init__(self):
@@ -14,6 +16,7 @@ class VideoPlayer(QWidget):
         # Set up the video player
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         self.videoWidget = QVideoWidget()
+        self.videoProbe = QVideoProbe()
 
         # Set up the layout
         layout = QVBoxLayout()
@@ -85,9 +88,23 @@ class VideoPlayer(QWidget):
         self.mediaPlayer.positionChanged.connect(self.position_changed)
         self.mediaPlayer.durationChanged.connect(self.duration_changed)
 
+    def process_video_frame(self, frame):
+        """Process the video frame received from QVideoProbe."""
+        image = frame.image()
+        if not image.isNull():
+            # Optionally, store or display the frame as needed
+            self.latestFrame = image
+
+
     def load_video(self, file_path):
         """Load a video file."""
         self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
+        self.cap = cv2.VideoCapture(file_path)
+        if not self.cap.isOpened():
+            print("Failed to open video with OpenCV.")
+        else:
+            print("Video loaded successfully with OpenCV.")
+        
 
     def toggle_playback(self):
         """Toggle between play and pause."""
@@ -125,21 +142,27 @@ class VideoPlayer(QWidget):
         return f"{int(minutes):02}:{int(seconds):02}"
 
     def capture_screenshot(self):
-        """Capture the current frame and save it as an image."""
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
-            # Grab the current frame from the video widget
-            video_frame = self.videoWidget.grab()
-            if not video_frame.isNull():
-                # Define the path to save the screenshot
-                timestamp = self.ms_to_time(self.mediaPlayer.position()).replace(":", "-")
+        """Capture the current frame and save it as an image using OpenCV."""
+        if hasattr(self, 'cap') and self.cap.isOpened():
+            position_ms = self.mediaPlayer.position()
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            frame_number = int((position_ms / 1000.0) * fps)
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+            ret, frame = self.cap.read()
+            if ret:
+                # Convert BGR (OpenCV format) to RGB
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Save using QImage
+                height, width, channel = frame.shape
+                bytes_per_line = 3 * width
+                q_img = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
+                timestamp = self.ms_to_time(position_ms).replace(":", "-")
                 output_path = f"{self.outputFolder}/screenshot_{timestamp}.png"
-                # Save the frame as an image
-                if video_frame.save(output_path):
+                if q_img.save(output_path):
                     print(f"Screenshot captured and saved to: {output_path}")
                 else:
                     print("Failed to save the screenshot.")
             else:
-                print("Failed to capture the frame.")
+                print("Failed to read the frame from OpenCV.")
         else:
-            print("Video is not playing. Cannot capture screenshot.")
- 
+            print("Video is not loaded with OpenCV. Cannot capture screenshot.")
