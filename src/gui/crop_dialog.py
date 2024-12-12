@@ -1,111 +1,100 @@
-from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QComboBox, QLabel, QWidget
-)
-from PyQt5.QtCore import Qt, QRect, QPoint
-from PyQt5.QtGui import QPainter, QPen, QColor, QPixmap
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton, 
+                           QLabel, QRubberBand, QMessageBox)
+from PyQt5.QtCore import Qt, QRect
+from PyQt5.QtGui import QPixmap, QImage
+import os
 
 class CropDialog(QDialog):
-    def __init__(self, pixmap, parent=None):
+    def __init__(self, image_path, parent=None):
         super().__init__(parent)
+        self.image_path = image_path
+        self.cropped_path = None
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """Set up the dialog UI."""
         self.setWindowTitle("Crop Image")
-        self.setModal(True)
-        self.original_pixmap = pixmap
-        self.current_pixmap = pixmap.copy()
-        self.crop_rect = None
-        self.dragging = False
-        self.start_pos = None
+        layout = QVBoxLayout()
         
-        # Setup UI
-        layout = QVBoxLayout(self)
+        # Load and display the image
+        self.image_label = QLabel()
+        self.pixmap = QPixmap(self.image_path)
         
-        # Add aspect ratio selector
-        ratio_layout = QHBoxLayout()
-        self.ratio_combo = QComboBox()
-        self.ratio_combo.addItems(["Free Form", "16:9", "4:3", "1:1"])
-        self.ratio_combo.currentTextChanged.connect(self.on_ratio_changed)
-        ratio_layout.addWidget(QLabel("Aspect Ratio:"))
-        ratio_layout.addWidget(self.ratio_combo)
-        ratio_layout.addStretch()
-        layout.addLayout(ratio_layout)
+        # Scale pixmap if too large while maintaining aspect ratio
+        scaled_pixmap = self.pixmap.scaled(800, 600, Qt.KeepAspectRatio, 
+                                         Qt.SmoothTransformation)
+        self.image_label.setPixmap(scaled_pixmap)
         
-        # Add preview area
-        self.preview = QLabel()
-        self.preview.setMinimumSize(640, 480)
-        self.preview.setPixmap(self.current_pixmap.scaled(
-            self.preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        ))
-        layout.addWidget(self.preview)
+        # Enable mouse tracking for rubber band selection
+        self.image_label.setMouseTracking(True)
+        layout.addWidget(self.image_label)
         
-        # Add buttons
-        button_layout = QHBoxLayout()
-        crop_button = QPushButton("Crop")
-        cancel_button = QPushButton("Cancel")
-        crop_button.clicked.connect(self.accept)
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(crop_button)
-        button_layout.addWidget(cancel_button)
-        layout.addLayout(button_layout)
+        # Add crop button
+        self.crop_button = QPushButton("Crop")
+        self.crop_button.clicked.connect(self.crop_image)
+        layout.addWidget(self.crop_button)
         
-        self.preview.setMouseTracking(True)
-        self.current_ratio = None
-    
-    def get_cropped_pixmap(self):
-        if self.crop_rect:
-            # Convert preview coordinates to original image coordinates
-            preview_rect = self.preview.rect()
-            scale_x = self.original_pixmap.width() / preview_rect.width()
-            scale_y = self.original_pixmap.height() / preview_rect.height()
-            
-            original_rect = QRect(
-                int(self.crop_rect.x() * scale_x),
-                int(self.crop_rect.y() * scale_y),
-                int(self.crop_rect.width() * scale_x),
-                int(self.crop_rect.height() * scale_y)
-            )
-            return self.original_pixmap.copy(original_rect)
-        return None
-
-    def on_ratio_changed(self, ratio_text):
-        if ratio_text == "Free Form":
-            self.current_ratio = None
-        elif ratio_text == "16:9":
-            self.current_ratio = 16/9
-        elif ratio_text == "4:3":
-            self.current_ratio = 4/3
-        elif ratio_text == "1:1":
-            self.current_ratio = 1
-        self.update_crop_rect()
-
-    def update_crop_rect(self):
-        if self.crop_rect and self.current_ratio:
-            new_width = self.crop_rect.height() * self.current_ratio
-            self.crop_rect.setWidth(int(new_width))
-            self.update()
-
+        self.setLayout(layout)
+        
+        # Initialize rubber band
+        self.rubber_band = QRubberBand(QRubberBand.Rectangle, self.image_label)
+        self.origin = None
+        
     def mousePressEvent(self, event):
+        """Handle mouse press to start rubber band selection."""
         if event.button() == Qt.LeftButton:
-            self.dragging = True
-            self.start_pos = event.pos() - self.preview.pos()
-            self.crop_rect = QRect(self.start_pos, QPoint(0, 0))
-            self.update()
-
+            self.origin = event.pos()
+            self.rubber_band.setGeometry(QRect(self.origin, self.origin))
+            self.rubber_band.show()
+            
     def mouseMoveEvent(self, event):
-        if self.dragging:
-            current_pos = event.pos() - self.preview.pos()
-            self.crop_rect = QRect(self.start_pos, current_pos).normalized()
-            if self.current_ratio:
-                new_width = self.crop_rect.height() * self.current_ratio
-                self.crop_rect.setWidth(int(new_width))
-            self.update()
-
+        """Handle mouse movement to update rubber band size."""
+        if self.origin:
+            self.rubber_band.setGeometry(QRect(self.origin, event.pos()).normalized())
+            
     def mouseReleaseEvent(self, event):
+        """Handle mouse release to finalize selection."""
         if event.button() == Qt.LeftButton:
-            self.dragging = False
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.crop_rect:
-            painter = QPainter(self)
-            painter.setPen(QPen(QColor(255, 0, 0), 2))
-            painter.drawRect(self.crop_rect.translated(self.preview.pos())) 
+            self.rubber_band.hide()
+            self.selected_rect = QRect(self.origin, event.pos()).normalized()
+            self.rubber_band.setGeometry(self.selected_rect)
+            self.rubber_band.show()
+            
+    def crop_image(self):
+        """Crop the image using the selected area and save it."""
+        if not hasattr(self, 'selected_rect'):
+            QMessageBox.warning(self, "Warning", "Please select an area to crop")
+            return
+            
+        try:
+            # Calculate the scale factor between original and displayed image
+            scale_x = self.pixmap.width() / self.image_label.pixmap().width()
+            scale_y = self.pixmap.height() / self.image_label.pixmap().height()
+            
+            # Scale the selection rectangle to match original image dimensions
+            scaled_rect = QRect(
+                int(self.selected_rect.x() * scale_x),
+                int(self.selected_rect.y() * scale_y),
+                int(self.selected_rect.width() * scale_x),
+                int(self.selected_rect.height() * scale_y)
+            )
+            
+            # Crop the original image
+            cropped_pixmap = self.pixmap.copy(scaled_rect)
+            
+            # Generate cropped image filename
+            base_path, ext = os.path.splitext(self.image_path)
+            self.cropped_path = f"{base_path}_cropped{ext}"
+            
+            # Save the cropped image
+            if cropped_pixmap.save(self.cropped_path):
+                self.accept()
+            else:
+                raise Exception("Failed to save cropped image")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to crop image: {str(e)}")
+            
+    def get_cropped_path(self):
+        """Return the path of the cropped image."""
+        return self.cropped_path 

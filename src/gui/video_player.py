@@ -1,6 +1,5 @@
 import cv2
 import sys
-import threading
 import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
@@ -117,7 +116,7 @@ class VideoPlayer(QWidget):
         controlsLayout.addWidget(QLabel("Speed"))
         controlsLayout.addWidget(self.speedSlider)
 
-        # Fullscreen Button
+        # FullScreen Button
         self.fullscreenButton = QPushButton("Fullscreen")
         self.fullscreenButton.clicked.connect(self.toggle_fullscreen)
         controlsLayout.addWidget(self.fullscreenButton)
@@ -207,29 +206,44 @@ class VideoPlayer(QWidget):
             self.fullscreenButton.setText("Exit Fullscreen")
 
     def take_screenshot(self):
-        """Capture the current frame as a screenshot."""
+        """Capture the current frame as a screenshot using OpenCV and optionally crop it."""
         if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
             return
-            
-        # Get the current video frame
-        video_frame = self.videoWidget.grab()
         
-        if hasattr(self, 'allowCrop') and self.allowCrop:
-            # Open crop dialog
-            crop_dialog = CropDialog(video_frame, self)
-            if crop_dialog.exec_() == QDialog.Accepted:
-                cropped_pixmap = crop_dialog.get_cropped_pixmap()
-                if cropped_pixmap:
-                    video_frame = cropped_pixmap
+        # Get the current position of the video
+        current_position = self.mediaPlayer.position()
+        
+        # Set the video capture to the current position
+        self.cap.set(cv2.CAP_PROP_POS_MSEC, current_position)
+        
+        # Read the current frame
+        ret, frame = self.cap.read()
+        if not ret:
+            QMessageBox.critical(self, "Error", "Failed to capture frame from video.")
+            return
         
         # Generate filename with timestamp
-        timestamp = self.mediaPlayer.position()
-        filename = f"screenshot_{timestamp}.png"
-        save_path = os.path.join(self.outputFolder, filename)
+        filename = f"screenshot_{current_position}.png"
         
-        # Save the screenshot
-        video_frame.save(save_path, "PNG")
+        # Use outputFolder if defined, otherwise use root project path
+        save_path = os.path.join(getattr(self, 'outputFolder', os.path.dirname(os.path.abspath(__file__))), filename)
+        
+        # Save the screenshot using OpenCV
+        cv2.imwrite(save_path, frame)
         print(f"Screenshot saved: {save_path}")
+        
+        # If crop is allowed, open the crop dialog with the saved image
+        if hasattr(self, 'allowCrop') and self.allowCrop:
+            try:
+                # Create and show crop dialog with the saved image
+                crop_dialog = CropDialog(save_path, self)
+                if crop_dialog.exec_() == QDialog.Accepted:
+                    # Get the cropped image path (CropDialog will handle saving)
+                    cropped_path = crop_dialog.get_cropped_path()
+                    if cropped_path:
+                        print(f"Cropped image saved: {cropped_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to crop image: {str(e)}")
 
     def closeEvent(self, event):
         """Handle the widget closing."""
