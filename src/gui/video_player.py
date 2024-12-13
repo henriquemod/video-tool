@@ -217,7 +217,6 @@ class VideoPlayer(QWidget):
         if not self.cap.isOpened():
             QMessageBox.critical(self, "Error", "Failed to open video with OpenCV.")
         else:
-            QMessageBox.information(self, "Success", "Video loaded successfully with OpenCV.")
             # Start playback automatically
             self.mediaPlayer.play()
             self.playButton.setText("Pause")
