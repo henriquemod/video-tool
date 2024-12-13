@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton, 
-                           QLabel, QRubberBand, QMessageBox)
-from PyQt5.QtCore import Qt, QRect, QPoint
+                           QLabel, QRubberBand, QMessageBox,
+                           QComboBox, QHBoxLayout)
+from PyQt5.QtCore import Qt, QRect, QPoint, QSize
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor
 import os
 
@@ -43,12 +44,31 @@ class CropDialog(QDialog):
         self.is_dragging = False
         self.drag_start_pos = None
         self.initial_rect = None
+        self.current_aspect_ratio = None
         self.setup_ui()
         
     def setup_ui(self):
         """Set up the dialog UI."""
         self.setWindowTitle("Crop Image")
         layout = QVBoxLayout()
+        
+        # Add aspect ratio selector
+        aspect_layout = QHBoxLayout()
+        aspect_label = QLabel("Aspect Ratio:")
+        self.aspect_combo = QComboBox()
+        self.aspect_combo.addItems([
+            "Free Crop",
+            "1:1 (Square)",
+            "4:3",
+            "16:9",
+            "3:2",
+            "2:3 (Portrait)"
+        ])
+        self.aspect_combo.currentTextChanged.connect(self.on_aspect_ratio_changed)
+        aspect_layout.addWidget(aspect_label)
+        aspect_layout.addWidget(self.aspect_combo)
+        aspect_layout.addStretch()
+        layout.addLayout(aspect_layout)
         
         # Load and display the image
         self.image_label = QLabel()
@@ -80,51 +100,147 @@ class CropDialog(QDialog):
         self.rubber_band = CustomRubberBand(QRubberBand.Rectangle, self.image_label)
         self.origin = None
         
+    def on_aspect_ratio_changed(self, text):
+        """Handle aspect ratio selection changes."""
+        ratios = {
+            "Free Crop": None,
+            "1:1 (Square)": 1/1,
+            "4:3": 4/3,
+            "16:9": 16/9,
+            "3:2": 3/2,
+            "2:3 (Portrait)": 2/3
+        }
+        self.current_aspect_ratio = ratios[text]
+        
+        # Clear existing selection if it exists
+        if hasattr(self, 'selected_rect'):
+            self.selected_rect = None
+            self.rubber_band.hide()
+
+    def adjust_selection_aspect_ratio(self):
+        """Adjust the current selection to match the chosen aspect ratio."""
+        if not self.current_aspect_ratio:
+            return
+            
+        current_rect = self.rubber_band.geometry()
+        new_width = current_rect.width()
+        new_height = int(new_width / self.current_aspect_ratio)
+        
+        # If new height would exceed image bounds, adjust width instead
+        if new_height > self.image_label.height():
+            new_height = current_rect.height()
+            new_width = int(new_height * self.current_aspect_ratio)
+        
+        # Center the new rectangle on the old one
+        x = current_rect.x() + (current_rect.width() - new_width) // 2
+        y = current_rect.y() + (current_rect.height() - new_height) // 2
+        
+        self.selected_rect = QRect(x, y, new_width, new_height)
+        self.rubber_band.setGeometry(self.selected_rect)
+
     def mousePressEvent(self, event):
         """Handle mouse press for both creating and moving selection."""
         if event.button() == Qt.LeftButton:
-            # Check if clicking inside existing selection
+            pos = self.image_label.mapFrom(self, event.pos())
+            
             if (hasattr(self, 'selected_rect') and 
-                self.selected_rect.contains(event.pos())):
+                self.selected_rect is not None and 
+                self.selected_rect.contains(pos)):
                 self.is_dragging = True
-                self.drag_start_pos = event.pos()
+                self.drag_start_pos = pos
                 self.initial_rect = QRect(self.selected_rect)
             else:
-                # Start new selection
                 self.is_dragging = False
-                self.origin = event.pos()
-                self.rubber_band.setGeometry(QRect(self.origin, self.origin))
+                self.origin = pos
+                self.rubber_band.setGeometry(QRect(self.origin, QSize(1, 1)))
                 self.rubber_band.show()
-            
+
     def mouseMoveEvent(self, event):
         """Handle mouse movement for both resizing and moving selection."""
+        pos = self.image_label.mapFrom(self, event.pos())
+        
+        # Constrain position to image boundaries
+        pos.setX(max(0, min(pos.x(), self.image_label.width())))
+        pos.setY(max(0, min(pos.y(), self.image_label.height())))
+        
         if self.is_dragging and self.drag_start_pos:
-            # Move existing selection
-            delta = event.pos() - self.drag_start_pos
+            delta = pos - self.drag_start_pos
             new_rect = self.initial_rect.translated(delta)
             
             # Keep selection within image bounds
             label_rect = self.image_label.rect()
-            if label_rect.contains(new_rect):
-                self.selected_rect = new_rect
-                self.rubber_band.setGeometry(self.selected_rect)
-        elif self.origin:
-            # Resize new selection
-            self.rubber_band.setGeometry(
-                QRect(self.origin, event.pos()).normalized())
+            if new_rect.right() > label_rect.width():
+                new_rect.moveRight(label_rect.width())
+            if new_rect.bottom() > label_rect.height():
+                new_rect.moveBottom(label_rect.height())
+            if new_rect.left() < 0:
+                new_rect.moveLeft(0)
+            if new_rect.top() < 0:
+                new_rect.moveTop(0)
             
+            self.selected_rect = new_rect
+            self.rubber_band.setGeometry(self.selected_rect)
+        elif self.origin:
+            # Calculate the raw rectangle from origin to current position
+            current_rect = QRect(self.origin, pos).normalized()
+            
+            if self.current_aspect_ratio:
+                # Calculate dimensions maintaining aspect ratio
+                if abs(pos.x() - self.origin.x()) > abs(pos.y() - self.origin.y()):
+                    # Width is dominant
+                    width = min(abs(pos.x() - self.origin.x()),
+                              self.image_label.width() - self.origin.x())
+                    height = int(width / self.current_aspect_ratio)
+                    
+                    # Adjust if height exceeds boundaries
+                    if height > self.image_label.height() - min(self.origin.y(), pos.y()):
+                        height = self.image_label.height() - min(self.origin.y(), pos.y())
+                        width = int(height * self.current_aspect_ratio)
+                else:
+                    # Height is dominant
+                    height = min(abs(pos.y() - self.origin.y()),
+                               self.image_label.height() - self.origin.y())
+                    width = int(height * self.current_aspect_ratio)
+                    
+                    # Adjust if width exceeds boundaries
+                    if width > self.image_label.width() - min(self.origin.x(), pos.x()):
+                        width = self.image_label.width() - min(self.origin.x(), pos.x())
+                        height = int(width / self.current_aspect_ratio)
+                
+                # Determine direction of drag to properly position the rectangle
+                x = self.origin.x()
+                y = self.origin.y()
+                
+                if pos.x() < self.origin.x():
+                    x = max(0, self.origin.x() - width)
+                if pos.y() < self.origin.y():
+                    y = max(0, self.origin.y() - height)
+                
+                # Create new rect with calculated dimensions
+                new_rect = QRect(x, y, width, height)
+            else:
+                # Free crop mode
+                new_rect = current_rect
+                
+                # Ensure the rectangle stays within the image bounds
+                new_rect = new_rect.intersected(self.image_label.rect())
+            
+            self.rubber_band.setGeometry(new_rect)
+
     def mouseReleaseEvent(self, event):
         """Handle mouse release for both creation and moving."""
         if event.button() == Qt.LeftButton:
+            pos = self.image_label.mapFrom(self, event.pos())
+            
             if self.is_dragging:
                 self.is_dragging = False
                 self.drag_start_pos = None
                 self.initial_rect = None
             else:
-                self.rubber_band.hide()
-                self.selected_rect = QRect(self.origin, event.pos()).normalized()
+                # Use the current rubber band geometry instead of creating a new rect
+                self.selected_rect = QRect(self.rubber_band.geometry())
+                # No need to hide and show again
                 self.rubber_band.setGeometry(self.selected_rect)
-                self.rubber_band.show()
             
     def crop_image(self):
         """Crop the image using the selected area and save it."""
