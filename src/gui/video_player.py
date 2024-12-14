@@ -343,7 +343,7 @@ class VideoPlayer(QWidget):
 
     def add_crop_checkbox(self):
         """Add crop checkbox to controls layout"""
-        self.cropCheckbox = QCheckBox("Allow Image Cropping")
+        self.cropCheckbox = QCheckBox("Crop Image")
         self.cropCheckbox.setChecked(self.allowCrop)
         self.cropCheckbox.stateChanged.connect(self.toggle_crop)
         
