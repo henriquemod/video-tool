@@ -1,6 +1,5 @@
 from PyQt5.QtWidgets import (
     QMainWindow,
-    QVBoxLayout,
     QWidget,
     QFileDialog,
     QAction,
@@ -9,8 +8,6 @@ from PyQt5.QtWidgets import (
     QFileSystemModel,
 )
 from .video_player import VideoPlayer
-from .settings import SettingsDialog
-from PyQt5.QtCore import QDir, Qt
 import os
 
 class MainWindow(QMainWindow):
@@ -29,6 +26,15 @@ class MainWindow(QMainWindow):
 
         # Create video player widget
         self.video_player = VideoPlayer()
+
+        # Add crop checkbox to the video player's control layout
+        self.video_player.add_crop_checkbox()
+        
+        # Set the output folder directly
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'output')
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        self.video_player.outputFolder = output_dir
 
         # Add widgets to main layout
         main_layout.addWidget(self.file_browser, 1)  # Smaller width for file browser
@@ -99,28 +105,13 @@ class MainWindow(QMainWindow):
         open_video_action.triggered.connect(self.load_video)
         file_menu.addAction(open_video_action)
 
-        # Add settings action
-        settingsAction = QAction("Settings", self)
-        settingsAction.triggered.connect(self.open_settings)
-        file_menu.addAction(settingsAction)
-
     def load_video(self):
-        """Open a file dialog to select a video file."""
+        """Open file dialog and load selected video"""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open Video File",
-            "",
-            "Video Files (*.mp4 *.avi *.mkv *.mov)"
+            "Open Video",
+            self.get_data_directory(),
+            "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)"
         )
         if file_path:
-            self.video_player.load_video(file_path) 
-
-    def open_settings(self):
-        """Open the settings dialog."""
-        settingsDialog = SettingsDialog(self)
-        if settingsDialog.exec_():
-            # Retrieve settings here
-            self.video_player.allowCrop = settingsDialog.cropCheckbox.isChecked()
-            output_folder = settingsDialog.outputFolderLabel.text().replace("Output Folder: ", "")
-            self.video_player.outputFolder = output_folder if output_folder else QDir.currentPath()
-            print(f"Settings saved: Crop Images - {self.video_player.allowCrop}, Output Folder - {self.video_player.outputFolder}")
+            self.video_player.load_video(file_path)

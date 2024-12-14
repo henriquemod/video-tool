@@ -3,7 +3,7 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
-    QHBoxLayout, QFileDialog, QMessageBox, QDialog
+    QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
@@ -148,11 +148,6 @@ class VideoPlayer(QWidget):
         self.stopButton.clicked.connect(self.stop_video)
         controlsLayout.addWidget(self.stopButton)
 
-        # Load Video Button
-        self.loadButton = QPushButton("Load Video")
-        self.loadButton.clicked.connect(self.open_file)
-        controlsLayout.addWidget(self.loadButton)
-
         # Volume Control
         self.volumeSlider = QSlider(Qt.Horizontal)
         self.volumeSlider.setRange(0, 100)
@@ -184,6 +179,9 @@ class VideoPlayer(QWidget):
         self.mediaPlayer.positionChanged.connect(self.position_changed)
         self.mediaPlayer.durationChanged.connect(self.duration_changed)
         self.mediaPlayer.stateChanged.connect(self.media_state_changed)
+
+        # Initialize crop checkbox as False by default
+        self.allowCrop = False
 
     def open_file(self):
         """
@@ -342,3 +340,18 @@ class VideoPlayer(QWidget):
         if self.cap and self.cap.isOpened():
             self.cap.release()
         event.accept()
+
+    def add_crop_checkbox(self):
+        """Add crop checkbox to controls layout"""
+        self.cropCheckbox = QCheckBox("Allow Image Cropping")
+        self.cropCheckbox.setChecked(self.allowCrop)
+        self.cropCheckbox.stateChanged.connect(self.toggle_crop)
+        
+        # Add checkbox to controls layout (insert before volume control)
+        layout = self.layout()
+        controlsLayout = layout.itemAt(2).layout()  # Get the controls layout
+        controlsLayout.insertWidget(2, self.cropCheckbox)  # Insert at position 2
+
+    def toggle_crop(self, state):
+        """Toggle crop functionality"""
+        self.allowCrop = bool(state)
