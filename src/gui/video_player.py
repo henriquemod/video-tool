@@ -3,12 +3,13 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
-    QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox
+    QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox, QComboBox
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir
 from .crop_dialog import CropDialog
+from .upscale_dialog import UpscaleDialog
 
 """
 VideoPlayer Widget for Multimedia Assistant Application
@@ -183,6 +184,10 @@ class VideoPlayer(QWidget):
         # Initialize crop checkbox as False by default
         self.allowCrop = False
 
+        # Check AI capabilities before adding upscale options
+        self.ai_capable = self.check_ai_capabilities()
+        self.add_upscale_checkbox()
+
     def open_file(self):
         """
         Opens a file dialog for video selection and loads the selected video.
@@ -307,22 +312,78 @@ class VideoPlayer(QWidget):
         # Use outputFolder if defined, otherwise use root project path
         save_path = os.path.join(getattr(self, 'outputFolder', os.path.dirname(os.path.abspath(__file__))), filename)
         
-        # Save the screenshot using OpenCV
+        # Save the original screenshot
         cv2.imwrite(save_path, frame)
-        print(f"Screenshot saved: {save_path}")
+        print(f"Original screenshot saved: {save_path}")
         
-        # If crop is allowed, open the crop dialog with the saved image
+        processing_path = save_path
+        final_path = save_path
+        
+        # Handle cropping if enabled
         if hasattr(self, 'allowCrop') and self.allowCrop:
             try:
-                # Create and show crop dialog with the saved image
                 crop_dialog = CropDialog(save_path, self)
                 if crop_dialog.exec_() == QDialog.Accepted:
-                    # Get the cropped image path (CropDialog will handle saving)
-                    cropped_path = crop_dialog.get_cropped_path()
-                    if cropped_path:
-                        print(f"Cropped image saved: {cropped_path}")
+                    processing_path = crop_dialog.get_cropped_path()
+                    if processing_path:
+                        print(f"Cropped image saved: {processing_path}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to crop image: {str(e)}")
+                return
+        
+        # Handle upscaling based on selected option
+        selected_upscale = self.upscale_combo.currentText()
+        if selected_upscale != "No Upscaling":
+            try:
+                # Parse method and scale from selection
+                method, scale = selected_upscale.split(" ")
+                scale = int(scale.strip("()x"))
+                
+                # Read the image to upscale (either original or cropped)
+                img = cv2.imread(processing_path)
+                if img is None:
+                    raise Exception("Failed to load image for upscaling")
+                
+                if "Real-ESRGAN" in method:
+                    # Use AI upscaling
+                    upscaled = self.upscale_with_ai(img, method, scale)
+                else:
+                    # Use traditional upscaling
+                    height, width = img.shape[:2]
+                    new_height = int(height * scale)
+                    new_width = int(width * scale)
+                    
+                    if method == "Bicubic":
+                        interpolation = cv2.INTER_CUBIC
+                    elif method == "Lanczos":
+                        interpolation = cv2.INTER_LANCZOS4
+                    else:
+                        interpolation = cv2.INTER_LINEAR
+                    
+                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=interpolation)
+                
+                # Generate upscaled filename
+                base_path = os.path.splitext(processing_path)[0]
+                final_path = f"{base_path}_upscaled_{method}_{scale}x.png"
+                
+                # Save upscaled image
+                cv2.imwrite(final_path, upscaled)
+                print(f"Upscaled image saved: {final_path}")
+            
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to upscale image: {str(e)}")
+                return
+        
+        # Show success message with all saved paths
+        saved_paths = [p for p in [save_path, processing_path, final_path] 
+                      if p and os.path.exists(p) and p != save_path]
+        
+        if saved_paths:
+            message = "Files saved:\n" + "\n".join(saved_paths)
+        else:
+            message = f"Screenshot saved: {save_path}"
+        
+        QMessageBox.information(self, "Success", message)
 
     def closeEvent(self, event):
         """
@@ -341,16 +402,229 @@ class VideoPlayer(QWidget):
             self.cap.release()
         event.accept()
 
+    def add_upscale_checkbox(self):
+        """Add upscale options to controls."""
+        # Create layout for upscale controls
+        upscale_layout = QHBoxLayout()
+        
+        # Add upscale label
+        upscale_label = QLabel("Upscale:")
+        upscale_layout.addWidget(upscale_label)
+        
+        # Create combo box
+        self.upscale_combo = QComboBox()
+        
+        # Add all options
+        options = [
+            "No Upscaling",
+            "Bicubic (2x)",
+            "Bicubic (3x)",
+            "Bicubic (4x)",
+            "Lanczos (2x)",
+            "Lanczos (3x)",
+            "Lanczos (4x)",
+            "Real-ESRGAN (2x)",
+            "Real-ESRGAN (4x)",
+        ]
+        self.upscale_combo.addItems(options)
+        upscale_layout.addWidget(self.upscale_combo)
+        
+        # Add performance warning label
+        self.performance_label = QLabel()
+        self.performance_label.setStyleSheet("""
+            QLabel {
+                color: #FF8C00;  /* Dark Orange */
+                font-weight: bold;
+                padding: 2px 5px;
+                border-radius: 3px;
+                background-color: rgba(255, 140, 0, 0.1);
+            }
+        """)
+        upscale_layout.addWidget(self.performance_label)
+        self.performance_label.hide()  # Initially hidden
+        
+        # Check AI capabilities and update UI
+        has_gpu = self.check_gpu_capabilities()
+        
+        # Connect combo box change event
+        self.upscale_combo.currentTextChanged.connect(
+            lambda text: self.on_upscale_option_changed(text, has_gpu)
+        )
+        
+        # Get the controls layout
+        layout = self.layout()
+        controlsLayout = layout.itemAt(2).layout()  # Get the controls layout
+        
+        # Add the upscale layout to controls
+        controlsLayout.insertLayout(2, upscale_layout)
+
+    def check_gpu_capabilities(self):
+        """Check for GPU acceleration capabilities."""
+        try:
+            import torch
+            
+            # Check for CUDA (NVIDIA) or MPS (Apple Silicon) support
+            has_cuda = torch.cuda.is_available()
+            has_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+            
+            if has_cuda:
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
+                print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
+                return True
+            elif has_mps:
+                print("Apple Metal GPU detected")
+                return True
+            else:
+                print("No compatible GPU detected, AI upscaling will use CPU")
+                return False
+            
+        except ImportError:
+            print("PyTorch not installed, AI upscaling will use CPU")
+            return False
+        except Exception as e:
+            print(f"Error checking GPU capabilities: {str(e)}")
+            return False
+
+    def on_upscale_option_changed(self, text, has_gpu):
+        """Handle upscale option changes and update performance warning."""
+        if "Real-ESRGAN" in text:
+            if not has_gpu:
+                self.performance_label.setText("⚠️ CPU Mode (Slow)")
+                self.performance_label.show()
+            else:
+                self.performance_label.hide()
+        else:
+            self.performance_label.hide()
+
+    def upscale_with_ai(self, img, method, scale):
+        """Upscale image using AI models"""
+        try:
+            # First check if numpy is available with correct version
+            import numpy as np
+            if np.__version__.startswith('2'):
+                raise ImportError("NumPy 2.x detected. Please install NumPy 1.24.3 for compatibility")
+            
+            import torch
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            from basicsr.utils.download_util import load_file_from_url
+            from realesrgan import RealESRGANer
+            
+            # Initialize model
+            model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+            
+            # Download and load model weights
+            if scale == 2:
+                model_path = load_file_from_url(
+                    'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth',
+                    model_dir='models'
+                )
+            else:  # scale == 4
+                model_path = load_file_from_url(
+                    'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth',
+                    model_dir='models'
+                )
+            
+            # Determine device
+            if torch.cuda.is_available():
+                device = torch.device('cuda')
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                device = torch.device('mps')  # For Apple Silicon
+            else:
+                device = torch.device('cpu')
+                # Show warning dialog only once per session
+                if not hasattr(self, '_showed_cpu_warning'):
+                    QMessageBox.warning(self, "Performance Warning", 
+                                      "No compatible GPU detected. AI upscaling will run on CPU and may be very slow.")
+                    self._showed_cpu_warning = True
+            
+            # Initialize upscaler
+            upscaler = RealESRGANer(
+                scale=scale,
+                model_path=model_path,
+                model=model,
+                tile=0,
+                tile_pad=10,
+                pre_pad=0,
+                device=device
+            )
+            
+            # Upscale image
+            output, _ = upscaler.enhance(img, outscale=scale)
+            return output
+            
+        except ImportError as e:
+            error_message = str(e)
+            if "numpy" in error_message.lower():
+                error_message += "\n\nPlease run:\npip install numpy==1.24.3"
+            elif "torch" in error_message.lower():
+                error_message += "\n\nPlease run:\npip install torch==2.0.1 torchvision==0.15.2"
+            elif "basicsr" in error_message.lower() or "realesrgan" in error_message.lower():
+                error_message += "\n\nPlease run:\npip install basicsr realesrgan"
+            
+            QMessageBox.critical(self, "Error", f"Missing required package:\n{error_message}")
+            raise
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"AI upscaling failed: {str(e)}")
+            raise
+
+    def check_ai_capabilities(self):
+        """Check if system can run AI upscaling."""
+        try:
+            # First try to import numpy with specific version
+            import numpy as np
+            if np.__version__.startswith('2'):
+                print("Warning: NumPy 2.x detected, downgrading may be required")
+            
+            import torch
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            from realesrgan import RealESRGANer
+            
+            # Check if CUDA is available
+            has_cuda = torch.cuda.is_available()
+            
+            # Check if MPS (Metal Performance Shaders for Mac) is available
+            has_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+            
+            # Check available GPU memory
+            if has_cuda:
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
+                print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
+            elif has_mps:
+                print("Apple Metal GPU detected")
+            else:
+                print("No compatible GPU detected, AI upscaling will use CPU (slow)")
+            
+            return True
+            
+        except ImportError as e:
+            print(f"AI capabilities not available: {str(e)}")
+            print("To enable AI upscaling, install required packages with:")
+            print("pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
+            return False
+        except Exception as e:
+            print(f"Error checking AI capabilities: {str(e)}")
+            return False
+
     def add_crop_checkbox(self):
         """Add crop checkbox to controls layout"""
+        # Create layout for crop controls
+        crop_layout = QHBoxLayout()
+        
+        # Create and setup crop checkbox
         self.cropCheckbox = QCheckBox("Crop Image")
+        self.allowCrop = False  # Initialize the crop flag
         self.cropCheckbox.setChecked(self.allowCrop)
         self.cropCheckbox.stateChanged.connect(self.toggle_crop)
         
-        # Add checkbox to controls layout (insert before volume control)
+        # Add checkbox to layout
+        crop_layout.addWidget(self.cropCheckbox)
+        
+        # Get the controls layout
         layout = self.layout()
         controlsLayout = layout.itemAt(2).layout()  # Get the controls layout
-        controlsLayout.insertWidget(2, self.cropCheckbox)  # Insert at position 2
+        
+        # Add the crop layout to controls
+        controlsLayout.insertLayout(2, crop_layout)
 
     def toggle_crop(self, state):
         """Toggle crop functionality"""

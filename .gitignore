@@ -4,3 +4,5 @@ data/*
 !data/*.txt
 output/*
 !output/*.txt
+models/*
+!models/*.txt
