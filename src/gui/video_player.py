@@ -3,22 +3,15 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
-    QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox, QComboBox
+    QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox, QComboBox,
+    QApplication
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir
-from PyQt5.QtWidgets import QApplication
 from .crop_dialog import CropDialog
-from .upscale_dialog import UpscaleDialog
 
-# Add these new imports
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.utils.checkpoint as checkpoint
 import numpy as np
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 """
 VideoPlayer Widget for Multimedia Assistant Application
