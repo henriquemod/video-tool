@@ -6,8 +6,11 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QTreeView,
     QFileSystemModel,
+    QPushButton,
+    QVBoxLayout,
 )
 from .video_player import VideoPlayer
+from .download_dialog import DownloadDialog
 import os
 
 class MainWindow(QMainWindow):
@@ -21,9 +24,21 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
 
+        # Create a container widget for file browser and download button
+        file_browser_container = QWidget()
+        file_browser_layout = QVBoxLayout(file_browser_container)
+        
         # Create and setup file browser
         self.setup_file_browser()
 
+        # Add file browser
+        file_browser_layout.addWidget(self.file_browser)
+        
+        # Create and add download button
+        download_button = QPushButton("Download video")
+        download_button.clicked.connect(self.show_download_dialog)
+        file_browser_layout.addWidget(download_button)
+        
         # Create video player widget
         self.video_player = VideoPlayer()
 
@@ -37,7 +52,7 @@ class MainWindow(QMainWindow):
         self.video_player.outputFolder = output_dir
 
         # Add widgets to main layout
-        main_layout.addWidget(self.file_browser, 1)  # Smaller width for file browser
+        main_layout.addWidget(file_browser_container, 1)  # Smaller width for file browser
         main_layout.addWidget(self.video_player, 4)  # Larger width for video player
 
         # Set up the menu bar
@@ -115,3 +130,8 @@ class MainWindow(QMainWindow):
         )
         if file_path:
             self.video_player.load_video(file_path)
+
+    def show_download_dialog(self):
+        """Show the download dialog when download button is clicked"""
+        dialog = DownloadDialog(self)
+        dialog.exec_()
