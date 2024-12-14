@@ -38,9 +38,20 @@ class DownloadThread(QThread):
                 self.video_progress.emit(i, total_videos)
                 
                 ydl_opts = {
-                    'format': 'best',
+                    'format': 'bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                     'outtmpl': os.path.join(self.data_dir, '%(title)s.%(ext)s'),
                     'progress_hooks': [self.progress_hook],
+                    'merge_output_format': 'mp4',
+                    'postprocessor_args': [
+                        '-c:v', 'libx264',
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        '-c:a', 'aac',
+                        '-b:a', '192k',
+                        '-movflags', '+faststart'
+                    ],
+                    'verbose': True,
+                    'prefer_ffmpeg': True,
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
