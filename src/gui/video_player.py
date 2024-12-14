@@ -442,10 +442,8 @@ class VideoPlayer(QWidget):
             "Lanczos (4x)",
             "Real-ESRGAN (2x)",
             "Real-ESRGAN (4x)",
-            "ESRGAN (2x)",  # New advanced AI method
-            "ESRGAN (4x)",  # New advanced AI method
-            "SwinIR (2x)",  # New advanced AI method
-            "SwinIR (4x)",  # New advanced AI method
+            "SwinIR (2x)",
+            "SwinIR (4x)",
         ]
         self.upscale_combo.addItems(options)
         upscale_layout.addWidget(self.upscale_combo)
@@ -611,15 +609,6 @@ class VideoPlayer(QWidget):
                 
                 return output
 
-            elif "ESRGAN" in method and "Real-ESRGAN" not in method:
-                model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
-                model_key = f'ESRGAN-{scale}x'
-                model_path = load_file_from_url(MODEL_URLS[model_key], model_dir='models')
-                loadnet = torch.load(model_path)
-                model.load_state_dict(loadnet)
-                model.eval()
-                model.to(device)
-
             else:  # Real-ESRGAN
                 model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
                 
@@ -634,8 +623,7 @@ class VideoPlayer(QWidget):
                         model_dir='models'
                     )
 
-            # Initialize upscaler for non-SwinIR models
-            if "SwinIR" not in method:
+                # Initialize upscaler
                 tile_size = 512 if torch.cuda.is_available() else 256  # Smaller tiles for CPU
                 upscaler = RealESRGANer(
                     scale=scale,
@@ -665,11 +653,19 @@ class VideoPlayer(QWidget):
             elif "basicsr" in error_message.lower() or "realesrgan" in error_message.lower():
                 error_message += "\n\nPlease run:\npip install basicsr realesrgan"
             
+            if processing_dialog:
+                processing_dialog.close()
             QMessageBox.critical(self, "Error", f"Missing required package:\n{error_message}")
             raise
         except Exception as e:
+            if processing_dialog:
+                processing_dialog.close()
             QMessageBox.critical(self, "Error", f"AI upscaling failed: {str(e)}")
             raise
+        finally:
+            # Ensure the dialog is always closed
+            if processing_dialog:
+                processing_dialog.close()
 
     def check_ai_capabilities(self):
         """Check if system can run AI upscaling."""
