@@ -8,8 +8,17 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir
+from PyQt5.QtWidgets import QApplication
 from .crop_dialog import CropDialog
 from .upscale_dialog import UpscaleDialog
+
+# Add these new imports
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.utils.checkpoint as checkpoint
+import numpy as np
+from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 """
 VideoPlayer Widget for Multimedia Assistant Application
@@ -44,6 +53,14 @@ Example usage:
 @anchor #video-player-implementation
 @see @Project Structure#video_player.py
 """
+
+# Model URLs for SwinIR
+MODEL_URLS = {
+    'SwinIR-2x': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x2.pth',
+    'SwinIR-4x': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth',
+    'ESRGAN-2x': 'https://github.com/xinntao/ESRGAN/releases/download/v0.4.0/ESRGAN_x2.pth',
+    'ESRGAN-4x': 'https://github.com/xinntao/ESRGAN/releases/download/v0.4.0/ESRGAN_x4.pth'
+}
 
 class VideoPlayer(QWidget):
     """
@@ -342,23 +359,25 @@ class VideoPlayer(QWidget):
                 if img is None:
                     raise Exception("Failed to load image for upscaling")
                 
-                if "Real-ESRGAN" in method:
-                    # Use AI upscaling
+                # Get dimensions for resizing
+                height, width = img.shape[:2]
+                new_height = int(height * scale)
+                new_width = int(width * scale)
+                
+                # Handle different upscaling methods
+                if any(ai_method in method for ai_method in ["Real-ESRGAN", "ESRGAN", "SwinIR"]):
                     upscaled = self.upscale_with_ai(img, method, scale)
+                elif method == "Bicubic":
+                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+                elif method == "Lanczos":
+                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+                elif method == "Nearest":
+                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+                elif method == "Area":
+                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
                 else:
-                    # Use traditional upscaling
-                    height, width = img.shape[:2]
-                    new_height = int(height * scale)
-                    new_width = int(width * scale)
-                    
-                    if method == "Bicubic":
-                        interpolation = cv2.INTER_CUBIC
-                    elif method == "Lanczos":
-                        interpolation = cv2.INTER_LANCZOS4
-                    else:
-                        interpolation = cv2.INTER_LINEAR
-                    
-                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=interpolation)
+                    # Default to bilinear interpolation
+                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
                 
                 # Generate upscaled filename
                 base_path = os.path.splitext(processing_path)[0]
@@ -423,6 +442,10 @@ class VideoPlayer(QWidget):
             "Lanczos (4x)",
             "Real-ESRGAN (2x)",
             "Real-ESRGAN (4x)",
+            "ESRGAN (2x)",  # New advanced AI method
+            "ESRGAN (4x)",  # New advanced AI method
+            "SwinIR (2x)",  # New advanced AI method
+            "SwinIR (4x)",  # New advanced AI method
         ]
         self.upscale_combo.addItems(options)
         upscale_layout.addWidget(self.upscale_combo)
@@ -496,60 +519,143 @@ class VideoPlayer(QWidget):
 
     def upscale_with_ai(self, img, method, scale):
         """Upscale image using AI models"""
+        processing_dialog = None
         try:
-            # First check if numpy is available with correct version
-            import numpy as np
-            if np.__version__.startswith('2'):
-                raise ImportError("NumPy 2.x detected. Please install NumPy 1.24.3 for compatibility")
-            
             import torch
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from basicsr.utils.download_util import load_file_from_url
             from realesrgan import RealESRGANer
-            
-            # Initialize model
-            model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
-            
-            # Download and load model weights
-            if scale == 2:
-                model_path = load_file_from_url(
-                    'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth',
-                    model_dir='models'
-                )
-            else:  # scale == 4
-                model_path = load_file_from_url(
-                    'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth',
-                    model_dir='models'
-                )
-            
-            # Determine device
-            if torch.cuda.is_available():
+
+            # Option 1: Enable MPS fallback
+            import os
+            os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
+
+            # Option 2: Or use this device selection instead if you prefer CPU-only on Mac
+            device = torch.device('cpu')
+            if torch.cuda.is_available():  # Will be True for NVIDIA GPUs
                 device = torch.device('cuda')
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                device = torch.device('mps')  # For Apple Silicon
+                if not hasattr(self, '_showed_gpu_info'):
+                    gpu_name = torch.cuda.get_device_name(0)
+                    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+                    print(f"Using GPU: {gpu_name} with {gpu_memory:.1f}GB memory")
+                    self._showed_gpu_info = True
             else:
-                device = torch.device('cpu')
-                # Show warning dialog only once per session
                 if not hasattr(self, '_showed_cpu_warning'):
                     QMessageBox.warning(self, "Performance Warning", 
-                                      "No compatible GPU detected. AI upscaling will run on CPU and may be very slow.")
+                                      "Using CPU for AI upscaling. This will be slower than GPU acceleration.")
                     self._showed_cpu_warning = True
-            
-            # Initialize upscaler
-            upscaler = RealESRGANer(
-                scale=scale,
-                model_path=model_path,
-                model=model,
-                tile=0,
-                tile_pad=10,
-                pre_pad=0,
-                device=device
-            )
-            
-            # Upscale image
-            output, _ = upscaler.enhance(img, outscale=scale)
-            return output
-            
+
+            # Show processing dialog
+            processing_dialog = QMessageBox(self)
+            processing_dialog.setIcon(QMessageBox.Information)
+            processing_dialog.setText("Processing image with AI upscaling...")
+            processing_dialog.setStandardButtons(QMessageBox.NoButton)
+            processing_dialog.show()
+            QApplication.processEvents()
+
+            if "SwinIR" in method:
+                # Import SwinIR components
+                from basicsr.utils.registry import ARCH_REGISTRY
+                
+                # Load the appropriate model based on scale
+                if scale == 2:
+                    model_path = load_file_from_url(
+                        'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x2.pth',
+                        model_dir='models'
+                    )
+                else:  # scale == 4
+                    model_path = load_file_from_url(
+                        'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth',
+                        model_dir='models'
+                    )
+
+                # Initialize model with the exact lightweight configuration
+                model = ARCH_REGISTRY.get('SwinIR')(
+                    upscale=scale,
+                    in_chans=3,
+                    img_size=64,
+                    window_size=8,
+                    img_range=1.,
+                    depths=[6, 6, 6, 6],
+                    embed_dim=60,
+                    num_heads=[6, 6, 6, 6],
+                    mlp_ratio=2,
+                    upsampler='pixelshuffledirect',
+                    resi_connection='1conv'
+                )
+
+                # Load pretrained weights
+                pretrained_model = torch.load(model_path, map_location=device)
+                if 'params_ema' in pretrained_model:
+                    pretrained_model = pretrained_model['params_ema']
+                elif 'params' in pretrained_model:
+                    pretrained_model = pretrained_model['params']
+                    
+                model.load_state_dict(pretrained_model, strict=True)
+                model.eval()
+                model.to(device)
+
+                # Process the image
+                img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0) / 255.
+                img_tensor = img_tensor.to(device)
+                
+                with torch.no_grad():
+                    output = model(img_tensor)
+                
+                output = output.squeeze().float().cpu().clamp_(0, 1).numpy()
+                output = (output * 255.0).round().astype(np.uint8)
+                output = output.transpose(1, 2, 0)
+                
+                if processing_dialog:
+                    processing_dialog.close()
+                
+                return output
+
+            elif "ESRGAN" in method and "Real-ESRGAN" not in method:
+                model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+                model_key = f'ESRGAN-{scale}x'
+                model_path = load_file_from_url(MODEL_URLS[model_key], model_dir='models')
+                loadnet = torch.load(model_path)
+                model.load_state_dict(loadnet)
+                model.eval()
+                model.to(device)
+
+            else:  # Real-ESRGAN
+                model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
+                
+                if scale == 2:
+                    model_path = load_file_from_url(
+                        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth',
+                        model_dir='models'
+                    )
+                else:
+                    model_path = load_file_from_url(
+                        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth',
+                        model_dir='models'
+                    )
+
+            # Initialize upscaler for non-SwinIR models
+            if "SwinIR" not in method:
+                tile_size = 512 if torch.cuda.is_available() else 256  # Smaller tiles for CPU
+                upscaler = RealESRGANer(
+                    scale=scale,
+                    model_path=model_path,
+                    model=model,
+                    tile=tile_size,
+                    tile_pad=10,
+                    pre_pad=0,
+                    half=torch.cuda.is_available(),
+                    device=device
+                )
+
+                # Upscale image
+                output, _ = upscaler.enhance(img, outscale=scale)
+                
+                if processing_dialog:
+                    processing_dialog.close()
+                
+                return output
+
         except ImportError as e:
             error_message = str(e)
             if "numpy" in error_message.lower():
