@@ -291,8 +291,6 @@ class VideoPlayer(QWidget):
         @anchor #screenshot-functionality
         @see @Project#Screenshot Capability
         """
-        if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
-            return
         
         # Get the current position of the video
         current_position = self.mediaPlayer.position()
