@@ -555,6 +555,20 @@ class VideoPlayer(QWidget):
                 # Import SwinIR components
                 from basicsr.utils.registry import ARCH_REGISTRY
                 
+                # Prepare the image
+                # Convert to RGB if BGR
+                if img.shape[2] == 3:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                
+                # Ensure dimensions are divisible by window_size=8
+                h, w = img.shape[:2]
+                pad_h = (8 - h % 8) % 8
+                pad_w = (8 - w % 8) % 8
+                
+                # Add padding if needed
+                if pad_h > 0 or pad_w > 0:
+                    img = np.pad(img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
+                
                 # Load the appropriate model based on scale
                 if scale == 2:
                     model_path = load_file_from_url(
@@ -593,16 +607,56 @@ class VideoPlayer(QWidget):
                 model.eval()
                 model.to(device)
 
-                # Process the image
+                # Process the image in tiles if it's too large
+                tile_size = 640  # Adjust this based on your GPU memory
+                tile_overlap = 32
+                
+                # Convert to tensor
                 img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0) / 255.
                 img_tensor = img_tensor.to(device)
                 
-                with torch.no_grad():
-                    output = model(img_tensor)
+                b, c, h, w = img_tensor.shape
+                output = torch.zeros((b, c, h * scale, w * scale), device=device)
                 
+                # Process large images in tiles
+                if h > tile_size or w > tile_size:
+                    for top in range(0, h, tile_size - tile_overlap):
+                        for left in range(0, w, tile_size - tile_overlap):
+                            # Get current tile coordinates
+                            bottom = min(top + tile_size, h)
+                            right = min(left + tile_size, w)
+                            
+                            # Extract tile
+                            tile = img_tensor[:, :, top:bottom, left:right]
+                            
+                            # Process tile
+                            with torch.no_grad():
+                                tile_output = model(tile)
+                            
+                            # Calculate output coordinates
+                            out_top = top * scale
+                            out_left = left * scale
+                            out_bottom = bottom * scale
+                            out_right = right * scale
+                            
+                            # Place tile in output
+                            output[:, :, out_top:out_bottom, out_left:out_right] = tile_output
+                else:
+                    # Process whole image at once if small enough
+                    with torch.no_grad():
+                        output = model(img_tensor)
+                
+                # Convert back to numpy array
                 output = output.squeeze().float().cpu().clamp_(0, 1).numpy()
                 output = (output * 255.0).round().astype(np.uint8)
                 output = output.transpose(1, 2, 0)
+                
+                # Remove padding if added
+                if pad_h > 0 or pad_w > 0:
+                    output = output[:h*scale, :w*scale, :]
+                
+                # Convert back to BGR if needed
+                output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
                 
                 if processing_dialog:
                     processing_dialog.close()
