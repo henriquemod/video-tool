@@ -4,13 +4,14 @@ import os
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
     QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox, QComboBox,
-    QApplication
+    QProgressDialog
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import QUrl, Qt, QDir
+from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
 from .crop_dialog import CropDialog
 
+import torch
 import numpy as np
 
 """
@@ -47,13 +48,231 @@ Example usage:
 @see @Project Structure#video_player.py
 """
 
-# Model URLs for SwinIR
+# Model URLs for SwinIR and Real-ESRGAN
 MODEL_URLS = {
     'SwinIR-2x': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x2.pth',
     'SwinIR-4x': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth',
-    'ESRGAN-2x': 'https://github.com/xinntao/ESRGAN/releases/download/v0.4.0/ESRGAN_x2.pth',
-    'ESRGAN-4x': 'https://github.com/xinntao/ESRGAN/releases/download/v0.4.0/ESRGAN_x4.pth'
+    'Real-ESRGAN-2x': 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth',
+    'Real-ESRGAN-4x': 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth'
 }
+
+class UpscaleThread(QThread):
+    """Thread for handling AI upscaling operations"""
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    
+    def __init__(self, img, method, scale, device):
+        super().__init__()
+        self.img = img
+        self.method = method
+        self.scale = scale
+        self.device = device
+        self._is_cancelled = False
+        
+    def run(self):
+        try:
+            import torch
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            from basicsr.utils.download_util import load_file_from_url
+            from realesrgan import RealESRGANer
+            
+            # Update progress
+            self.progress.emit(10)
+            
+            output = None  # Initialize output variable
+            
+            if "SwinIR" in self.method:
+                from basicsr.utils.registry import ARCH_REGISTRY
+                
+                # Prepare the image
+                if self.img.shape[2] == 3:
+                    img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
+                
+                # Update progress
+                self.progress.emit(20)
+                
+                # Handle padding
+                h, w = img.shape[:2]
+                pad_h = (8 - h % 8) % 8
+                pad_w = (8 - w % 8) % 8
+                
+                if pad_h > 0 or pad_w > 0:
+                    img = np.pad(img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
+                
+                # Load model
+                if self.scale == 2:
+                    model_path = load_file_from_url(MODEL_URLS['SwinIR-2x'], model_dir='models')
+                else:
+                    model_path = load_file_from_url(MODEL_URLS['SwinIR-4x'], model_dir='models')
+                
+                # Update progress
+                self.progress.emit(40)
+                
+                if self._is_cancelled:
+                    return
+                
+                # Initialize model
+                model = ARCH_REGISTRY.get('SwinIR')(
+                    upscale=self.scale,
+                    in_chans=3,
+                    img_size=64,
+                    window_size=8,
+                    img_range=1.,
+                    depths=[6, 6, 6, 6],
+                    embed_dim=60,
+                    num_heads=[6, 6, 6, 6],
+                    mlp_ratio=2,
+                    upsampler='pixelshuffledirect',
+                    resi_connection='1conv'
+                )
+                
+                # Load weights
+                pretrained_model = torch.load(model_path, map_location=self.device)
+                if 'params_ema' in pretrained_model:
+                    pretrained_model = pretrained_model['params_ema']
+                elif 'params' in pretrained_model:
+                    pretrained_model = pretrained_model['params']
+                
+                model.load_state_dict(pretrained_model, strict=True)
+                model.eval()
+                model.to(self.device)
+                
+                # Update progress
+                self.progress.emit(60)
+                
+                if self._is_cancelled:
+                    return
+                
+                # Process image
+                img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0) / 255.
+                img_tensor = img_tensor.to(self.device)
+                
+                # Process in tiles if needed
+                tile_size = 640
+                tile_overlap = 32
+                
+                b, c, h, w = img_tensor.shape
+                output = torch.zeros((b, c, h * self.scale, w * self.scale), device=self.device)
+                
+                if h > tile_size or w > tile_size:
+                    total_tiles = ((h - 1) // (tile_size - tile_overlap) + 1) * \
+                                ((w - 1) // (tile_size - tile_overlap) + 1)
+                    current_tile = 0
+                    
+                    for top in range(0, h, tile_size - tile_overlap):
+                        for left in range(0, w, tile_size - tile_overlap):
+                            if self._is_cancelled:
+                                return
+                                
+                            bottom = min(top + tile_size, h)
+                            right = min(left + tile_size, w)
+                            
+                            tile = img_tensor[:, :, top:bottom, left:right]
+                            
+                            with torch.no_grad():
+                                tile_output = model(tile)
+                            
+                            out_top = top * self.scale
+                            out_left = left * self.scale
+                            out_bottom = bottom * self.scale
+                            out_right = right * self.scale
+                            
+                            output[:, :, out_top:out_bottom, out_left:out_right] = tile_output
+                            
+                            current_tile += 1
+                            progress = 60 + (current_tile / total_tiles) * 35
+                            self.progress.emit(int(progress))
+                else:
+                    with torch.no_grad():
+                        output = model(img_tensor)
+                
+                # Final processing
+                output = output.squeeze().float().cpu().clamp_(0, 1).numpy()
+                output = (output * 255.0).round().astype(np.uint8)
+                output = output.transpose(1, 2, 0)
+                
+                if pad_h > 0 or pad_w > 0:
+                    output = output[:h*self.scale, :w*self.scale, :]
+                
+                output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
+                
+            elif "Real-ESRGAN" in self.method:
+                try:
+                    # Initialize model with correct architecture for Real-ESRGAN
+                    model = RRDBNet(
+                        num_in_ch=3,
+                        num_out_ch=3,
+                        num_feat=64,
+                        num_block=23,
+                        num_grow_ch=32,
+                        scale=self.scale
+                    )
+                    
+                    # Select appropriate model based on scale
+                    if self.scale == 2:
+                        model_path = load_file_from_url(MODEL_URLS['Real-ESRGAN-2x'], model_dir='models')
+                    else:
+                        model_path = load_file_from_url(MODEL_URLS['Real-ESRGAN-4x'], model_dir='models')
+                    
+                    # Update progress
+                    self.progress.emit(30)
+                    
+                    if self._is_cancelled:
+                        return
+                    
+                    # Load pre-trained model state
+                    pretrained_model = torch.load(model_path, map_location=self.device)
+                    if 'params_ema' in pretrained_model:
+                        pretrained_model = pretrained_model['params_ema']
+                    elif 'params' in pretrained_model:
+                        pretrained_model = pretrained_model['params']
+                    else:
+                        raise KeyError("No 'params_ema' or 'params' keys found in the model file.")
+                    
+                    model.load_state_dict(pretrained_model, strict=True)
+                    model.eval()
+                    model.to(self.device)
+                    
+                    # Initialize upsampler
+                    upsampler = RealESRGANer(
+                        scale=self.scale,
+                        model_path=model_path,
+                        model=model,
+                        tile=512,
+                        tile_pad=32,
+                        pre_pad=0,
+                        half=True if self.device == 'cuda' else False,
+                        device=self.device
+                    )
+                    
+                    # Update progress
+                    self.progress.emit(50)
+                    
+                    if self._is_cancelled:
+                        return
+                    
+                    # Process image
+                    output, _ = upsampler.enhance(self.img, outscale=self.scale)
+                    
+                except Exception as e:
+                    raise Exception(f"Real-ESRGAN processing failed: {str(e)}")
+            
+            else:
+                raise Exception(f"Unsupported upscaling method: {self.method}")
+            
+            # Ensure we have a valid output
+            if output is None:
+                raise Exception("Failed to generate output image")
+            
+            self.progress.emit(100)
+            self.finished.emit(output)
+            
+        except Exception as e:
+            self.error.emit(str(e))
+    
+    def cancel(self):
+        self._is_cancelled = True
 
 class VideoPlayer(QWidget):
     """
@@ -343,43 +562,41 @@ class VideoPlayer(QWidget):
         selected_upscale = self.upscale_combo.currentText()
         if selected_upscale != "No Upscaling":
             try:
-                # Parse method and scale from selection
+                # Parse method and scale
                 method, scale = selected_upscale.split(" ")
                 scale = int(scale.strip("()x"))
                 
-                # Read the image to upscale (either original or cropped)
+                # Read the image to upscale
                 img = cv2.imread(processing_path)
                 if img is None:
                     raise Exception("Failed to load image for upscaling")
                 
-                # Get dimensions for resizing
-                height, width = img.shape[:2]
-                new_height = int(height * scale)
-                new_width = int(width * scale)
+                # Create progress dialog
+                progress = QProgressDialog("Upscaling image...", "Cancel", 0, 100, self)
+                progress.setWindowModality(Qt.WindowModal)
+                progress.setAutoClose(True)
+                progress.setAutoReset(True)
                 
-                # Handle different upscaling methods
-                if any(ai_method in method for ai_method in ["Real-ESRGAN", "ESRGAN", "SwinIR"]):
-                    upscaled = self.upscale_with_ai(img, method, scale)
-                elif method == "Bicubic":
-                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-                elif method == "Lanczos":
-                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
-                elif method == "Nearest":
-                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
-                elif method == "Area":
-                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-                else:
-                    # Default to bilinear interpolation
-                    upscaled = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+                # Create and configure upscale thread
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                self.upscale_thread = UpscaleThread(img, method, scale, device)
                 
-                # Generate upscaled filename
-                base_path = os.path.splitext(processing_path)[0]
-                final_path = f"{base_path}_upscaled_{method}_{scale}x.png"
+                # Connect signals
+                self.upscale_thread.progress.connect(progress.setValue)
+                self.upscale_thread.finished.connect(lambda result: self.handle_upscale_finished(
+                    result, processing_path, method, scale, progress))
+                self.upscale_thread.error.connect(lambda err: self.handle_upscale_error(err, progress))
                 
-                # Save upscaled image
-                cv2.imwrite(final_path, upscaled)
-                print(f"Upscaled image saved: {final_path}")
-            
+                # Connect cancel button
+                progress.canceled.connect(self.upscale_thread.cancel)
+                
+                # Start thread
+                self.upscale_thread.start()
+                
+                # Show progress dialog
+                progress.exec_()
+                return
+                
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to upscale image: {str(e)}")
                 return
@@ -508,211 +725,30 @@ class VideoPlayer(QWidget):
         else:
             self.performance_label.hide()
 
-    def upscale_with_ai(self, img, method, scale):
-        """Upscale image using AI models"""
-        processing_dialog = None
-        try:
-            import torch
-            from basicsr.archs.rrdbnet_arch import RRDBNet
-            from basicsr.utils.download_util import load_file_from_url
-            from realesrgan import RealESRGANer
-
-            # Option 1: Enable MPS fallback
-            import os
-            os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'
-
-            # Option 2: Or use this device selection instead if you prefer CPU-only on Mac
-            device = torch.device('cpu')
-            if torch.cuda.is_available():  # Will be True for NVIDIA GPUs
-                device = torch.device('cuda')
-                if not hasattr(self, '_showed_gpu_info'):
-                    gpu_name = torch.cuda.get_device_name(0)
-                    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
-                    print(f"Using GPU: {gpu_name} with {gpu_memory:.1f}GB memory")
-                    self._showed_gpu_info = True
-            else:
-                if not hasattr(self, '_showed_cpu_warning'):
-                    QMessageBox.warning(self, "Performance Warning", 
-                                      "Using CPU for AI upscaling. This will be slower than GPU acceleration.")
-                    self._showed_cpu_warning = True
-
-            # Show processing dialog
-            processing_dialog = QMessageBox(self)
-            processing_dialog.setIcon(QMessageBox.Information)
-            processing_dialog.setText("Processing image with AI upscaling...")
-            processing_dialog.setStandardButtons(QMessageBox.NoButton)
-            processing_dialog.show()
-            QApplication.processEvents()
-
-            if "SwinIR" in method:
-                # Import SwinIR components
-                from basicsr.utils.registry import ARCH_REGISTRY
+    def handle_upscale_finished(self, result, processing_path, method, scale, progress_dialog):
+        """Handle completion of upscaling process"""
+        if result is not None:
+            try:
+                # Generate upscaled filename
+                base_path = os.path.splitext(processing_path)[0]
+                final_path = f"{base_path}_upscaled_{method}_{scale}x.png"
                 
-                # Prepare the image
-                # Convert to RGB if BGR
-                if img.shape[2] == 3:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                # Save upscaled image
+                cv2.imwrite(final_path, result)
                 
-                # Ensure dimensions are divisible by window_size=8
-                h, w = img.shape[:2]
-                pad_h = (8 - h % 8) % 8
-                pad_w = (8 - w % 8) % 8
+                # Close progress dialog
+                progress_dialog.close()
                 
-                # Add padding if needed
-                if pad_h > 0 or pad_w > 0:
-                    img = np.pad(img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
+                # Show success message
+                QMessageBox.information(self, "Success", f"Upscaled image saved: {final_path}")
                 
-                # Load the appropriate model based on scale
-                if scale == 2:
-                    model_path = load_file_from_url(
-                        'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x2.pth',
-                        model_dir='models'
-                    )
-                else:  # scale == 4
-                    model_path = load_file_from_url(
-                        'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth',
-                        model_dir='models'
-                    )
-
-                # Initialize model with the exact lightweight configuration
-                model = ARCH_REGISTRY.get('SwinIR')(
-                    upscale=scale,
-                    in_chans=3,
-                    img_size=64,
-                    window_size=8,
-                    img_range=1.,
-                    depths=[6, 6, 6, 6],
-                    embed_dim=60,
-                    num_heads=[6, 6, 6, 6],
-                    mlp_ratio=2,
-                    upsampler='pixelshuffledirect',
-                    resi_connection='1conv'
-                )
-
-                # Load pretrained weights
-                pretrained_model = torch.load(model_path, map_location=device)
-                if 'params_ema' in pretrained_model:
-                    pretrained_model = pretrained_model['params_ema']
-                elif 'params' in pretrained_model:
-                    pretrained_model = pretrained_model['params']
-                    
-                model.load_state_dict(pretrained_model, strict=True)
-                model.eval()
-                model.to(device)
-
-                # Process the image in tiles if it's too large
-                tile_size = 640  # Adjust this based on your GPU memory
-                tile_overlap = 32
-                
-                # Convert to tensor
-                img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0) / 255.
-                img_tensor = img_tensor.to(device)
-                
-                b, c, h, w = img_tensor.shape
-                output = torch.zeros((b, c, h * scale, w * scale), device=device)
-                
-                # Process large images in tiles
-                if h > tile_size or w > tile_size:
-                    for top in range(0, h, tile_size - tile_overlap):
-                        for left in range(0, w, tile_size - tile_overlap):
-                            # Get current tile coordinates
-                            bottom = min(top + tile_size, h)
-                            right = min(left + tile_size, w)
-                            
-                            # Extract tile
-                            tile = img_tensor[:, :, top:bottom, left:right]
-                            
-                            # Process tile
-                            with torch.no_grad():
-                                tile_output = model(tile)
-                            
-                            # Calculate output coordinates
-                            out_top = top * scale
-                            out_left = left * scale
-                            out_bottom = bottom * scale
-                            out_right = right * scale
-                            
-                            # Place tile in output
-                            output[:, :, out_top:out_bottom, out_left:out_right] = tile_output
-                else:
-                    # Process whole image at once if small enough
-                    with torch.no_grad():
-                        output = model(img_tensor)
-                
-                # Convert back to numpy array
-                output = output.squeeze().float().cpu().clamp_(0, 1).numpy()
-                output = (output * 255.0).round().astype(np.uint8)
-                output = output.transpose(1, 2, 0)
-                
-                # Remove padding if added
-                if pad_h > 0 or pad_w > 0:
-                    output = output[:h*scale, :w*scale, :]
-                
-                # Convert back to BGR if needed
-                output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
-                
-                if processing_dialog:
-                    processing_dialog.close()
-                
-                return output
-
-            else:  # Real-ESRGAN
-                model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=scale)
-                
-                if scale == 2:
-                    model_path = load_file_from_url(
-                        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth',
-                        model_dir='models'
-                    )
-                else:
-                    model_path = load_file_from_url(
-                        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth',
-                        model_dir='models'
-                    )
-
-                # Initialize upscaler
-                tile_size = 512 if torch.cuda.is_available() else 256  # Smaller tiles for CPU
-                upscaler = RealESRGANer(
-                    scale=scale,
-                    model_path=model_path,
-                    model=model,
-                    tile=tile_size,
-                    tile_pad=10,
-                    pre_pad=0,
-                    half=torch.cuda.is_available(),
-                    device=device
-                )
-
-                # Upscale image
-                output, _ = upscaler.enhance(img, outscale=scale)
-                
-                if processing_dialog:
-                    processing_dialog.close()
-                
-                return output
-
-        except ImportError as e:
-            error_message = str(e)
-            if "numpy" in error_message.lower():
-                error_message += "\n\nPlease run:\npip install numpy==1.24.3"
-            elif "torch" in error_message.lower():
-                error_message += "\n\nPlease run:\npip install torch==2.0.1 torchvision==0.15.2"
-            elif "basicsr" in error_message.lower() or "realesrgan" in error_message.lower():
-                error_message += "\n\nPlease run:\npip install basicsr realesrgan"
-            
-            if processing_dialog:
-                processing_dialog.close()
-            QMessageBox.critical(self, "Error", f"Missing required package:\n{error_message}")
-            raise
-        except Exception as e:
-            if processing_dialog:
-                processing_dialog.close()
-            QMessageBox.critical(self, "Error", f"AI upscaling failed: {str(e)}")
-            raise
-        finally:
-            # Ensure the dialog is always closed
-            if processing_dialog:
-                processing_dialog.close()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save upscaled image: {str(e)}")
+    
+    def handle_upscale_error(self, error_message, progress_dialog):
+        """Handle upscaling errors"""
+        progress_dialog.close()
+        QMessageBox.critical(self, "Error", f"Upscaling failed: {error_message}")
 
     def check_ai_capabilities(self):
         """Check if system can run AI upscaling."""
