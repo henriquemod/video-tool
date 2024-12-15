@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
 )
 from .video_player import VideoPlayer
 from .download_dialog import DownloadDialog
+from .upscale_dialog import UpscaleDialog
 import os
 
 class MainWindow(QMainWindow):
@@ -38,6 +39,11 @@ class MainWindow(QMainWindow):
         download_button = QPushButton("Download video")
         download_button.clicked.connect(self.show_download_dialog)
         file_browser_layout.addWidget(download_button)
+        
+        # Add the new upscale batch button
+        upscale_button = QPushButton("Upscale batch")
+        upscale_button.clicked.connect(self.show_upscale_dialog)
+        file_browser_layout.addWidget(upscale_button)
         
         # Create video player widget
         self.video_player = VideoPlayer()
@@ -134,4 +140,9 @@ class MainWindow(QMainWindow):
     def show_download_dialog(self):
         """Show the download dialog when download button is clicked"""
         dialog = DownloadDialog(self)
+        dialog.exec_()
+
+    def show_upscale_dialog(self):
+        """Show the upscale dialog when upscale batch button is clicked"""
+        dialog = UpscaleDialog(self)
         dialog.exec_()
