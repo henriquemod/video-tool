@@ -428,17 +428,14 @@ class VideoPlayer(QWidget):
         """Toggle between play and pause."""
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
             self.mediaPlayer.pause()
-            # self.playButton.setText("Play")
             self.playButton.setIcon(generateIcon("media-playback-start"))
         else:
             self.mediaPlayer.play()
-            # self.playButton.setText("Pause")
             self.playButton.setIcon(generateIcon("media-playback-pause"))
 
     def stop_video(self):
         """Stop video playback."""
         self.mediaPlayer.stop()
-        # self.playButton.setText("Play")
         self.playButton.setIcon(generateIcon("media-playback-start"))
 
     def set_position(self, position):
