@@ -8,14 +8,87 @@ from PyQt5.QtWidgets import (
     QFileSystemModel,
     QPushButton,
     QVBoxLayout,
-    QLabel
 )
 from .video_player import VideoPlayer
 from .download_dialog import DownloadDialog
 from .upscale_dialog import UpscaleDialog
 import os
 
+
 class MainWindow(QMainWindow):
+    """
+    MainWindow - Primary Application Window for Multimedia Assistant
+
+    This module implements the main application window that serves as the central hub for all multimedia
+    operations and user interactions. It integrates various components including video playback,
+    file management, and media processing features.
+
+    Key Features:
+    - Integrated video player with AI enhancement capabilities
+    - File browser for media organization and access
+    - Video download functionality from online platforms
+    - Batch image upscaling with AI support
+    - Intuitive menu system for application control
+
+    Architecture:
+    1. Layout Components:
+        - Split view design with file browser and video player
+        - Responsive layout with adjustable proportions (1:4 ratio)
+        - Integrated toolbar for common operations
+
+    2. File Management:
+        - Tree-based file browser for media navigation
+        - Filtered view showing only supported video formats
+        - Double-click functionality for quick video loading
+        - Automatic output directory management
+
+    3. Media Operations:
+        - Video downloading with progress tracking
+        - Batch upscaling for images and screenshots
+        - Integrated video player with AI enhancement
+        - File format support: MP4, AVI, MKV, MOV
+
+    4. Menu System:
+        - Application control (Exit)
+        - File operations (Open Video)
+        - Future extensibility for additional features
+
+    Technical Implementation:
+    - Uses QMainWindow as the foundation for the application window
+    - Implements custom file system model for media filtering
+    - Manages component communication and state
+    - Handles file system operations and directory structure
+
+    Directory Structure:
+    - /data: Storage for downloaded and imported videos
+    - /output: Destination for processed media files
+    - /models: Storage for AI model weights
+
+    Example Usage:
+        app = QApplication(sys.argv)
+        main_window = MainWindow()
+        main_window.show()
+        sys.exit(app.exec_())
+
+    Dependencies:
+    - PyQt5: Core GUI framework
+    - Custom Components:
+        - VideoPlayer: Advanced video playback
+        - DownloadDialog: Video acquisition
+        - UpscaleDialog: Batch image processing
+        - CropDialog: Image cropping utility
+
+    Performance Considerations:
+    - Efficient file system monitoring
+    - Responsive UI during heavy operations
+    - Proper resource cleanup on exit
+    - Memory management for large media files
+
+    @see @Project Structure#main_window.py
+    @see @Project#Application Architecture
+    @see @Project#File Management
+    """
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Multimedia Assistant")
@@ -31,7 +104,8 @@ class MainWindow(QMainWindow):
 
         # Set the output folder directly
         output_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'output'
+            os.path.dirname(os.path.dirname(
+                os.path.dirname(__file__))), 'output'
         )
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -40,26 +114,28 @@ class MainWindow(QMainWindow):
         # Create a container widget for file browser and download button
         file_browser_container = QWidget()
         file_browser_layout = QVBoxLayout(file_browser_container)
-        
+
         # Create and setup file browser
         self.setup_file_browser()
 
         # Add file browser
         file_browser_layout.addWidget(self.file_browser)
-        
+
         # Create and add download button
         download_button = QPushButton("Download video")
         download_button.clicked.connect(self.show_download_dialog)
         file_browser_layout.addWidget(download_button)
-        
+
         # Add the new upscale batch button
         upscale_button = QPushButton("Upscale batch")
         upscale_button.clicked.connect(self.show_upscale_dialog)
         file_browser_layout.addWidget(upscale_button)
-        
+
         # Add widgets to main layout
-        main_layout.addWidget(file_browser_container, 1)  # Smaller width for file browser
-        main_layout.addWidget(self.video_player, 4)        # Larger width for video player
+        # Smaller width for file browser
+        main_layout.addWidget(file_browser_container, 1)
+        # Larger width for video player
+        main_layout.addWidget(self.video_player, 4)
 
         # Set up the menu bar
         self.setup_menu_bar()
@@ -76,7 +152,8 @@ class MainWindow(QMainWindow):
         # Create tree view
         self.file_browser = QTreeView()
         self.file_browser.setModel(self.file_model)
-        self.file_browser.setRootIndex(self.file_model.index(self.video_player.get_data_directory()))
+        self.file_browser.setRootIndex(self.file_model.index(
+            self.video_player.get_data_directory()))
 
         # Hide unnecessary columns
         self.file_browser.setColumnHidden(1, True)  # Size

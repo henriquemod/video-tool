@@ -14,39 +14,6 @@ from .crop_dialog import CropDialog
 import torch
 import numpy as np
 
-"""
-VideoPlayer Widget for Multimedia Assistant Application
-
-This module implements a comprehensive video player widget using PyQt5 and OpenCV, providing
-professional-grade video playback capabilities with synchronized audio support.
-
-Key Features:
-- Video playback with support for common formats (MP4, AVI, MKV, MOV)
-- Advanced playback controls (play, pause, stop, seek)
-- Volume and playback speed adjustment
-- High-quality screenshot capture with optional cropping
-- Fullscreen support
-- Cross-platform compatibility (Windows, macOS, Linux)
-
-Technical Implementation:
-- Uses QMediaPlayer for smooth video/audio playback
-- Integrates OpenCV for frame capture and processing
-- Implements responsive GUI with custom styling for different platforms
-- Employs efficient memory management for large video files
-
-Dependencies:
-- PyQt5: GUI framework and media playback
-- OpenCV (cv2): Frame capture and image processing
-- Standard libraries: os, sys
-
-Example usage:
-    player = VideoPlayer()
-    player.load_video("path/to/video.mp4")
-    player.show()
-
-@anchor #video-player-implementation
-@see @Project Structure#video_player.py
-"""
 
 # Model URLs for SwinIR and Real-ESRGAN
 MODEL_URLS = {
@@ -276,25 +243,73 @@ class UpscaleThread(QThread):
 
 class VideoPlayer(QWidget):
     """
-    A feature-rich video player widget implementing professional multimedia playback capabilities.
-    
-    This widget provides a complete video playback interface with:
-    - Video preview screen
-    - Playback controls (play/pause, stop, seek)
-    - Volume and playback speed controls
-    - Screenshot functionality with optional cropping
-    - Fullscreen support
-    
-    Attributes:
-        outputFolder (str): Directory for saving screenshots
-        mediaPlayer (QMediaPlayer): Core media playback engine
-        videoWidget (QVideoWidget): Widget for video display
-        cap (cv2.VideoCapture): OpenCV video capture object
-        positionSlider (QSlider): Seek control for video navigation
-        volumeSlider (QSlider): Volume control slider
-        speedSlider (QSlider): Playback speed control
-    
-    @anchor #video-player-class
+    VideoPlayer Widget for Multimedia Assistant Application
+
+    This module implements a professional-grade video player widget with integrated AI upscaling
+    capabilities and advanced playback controls.
+
+    Key Features:
+    - Professional video playback with frame-accurate navigation
+    - AI-powered screenshot enhancement using SwinIR and Real-ESRGAN
+    - Advanced screenshot capabilities with cropping support
+    - Frame-by-frame navigation with keyboard shortcuts
+    - Multi-threaded processing for responsive UI
+    - Cross-platform compatibility (Windows, macOS, Linux)
+    - GPU acceleration support for AI operations
+
+    Technical Implementation:
+    - Hybrid architecture using QMediaPlayer for playback and OpenCV for frame processing
+    - Integrated AI models (SwinIR, Real-ESRGAN) for high-quality upscaling
+    - Efficient memory management with tile-based processing for large images
+    - Multi-threaded design for background processing
+    - Responsive GUI with platform-specific optimizations
+
+    Components:
+    1. Core Playback:
+    - QMediaPlayer for smooth video/audio playback
+    - Frame-accurate seeking and navigation
+    - Custom slider implementation for precise control
+
+    2. AI Enhancement:
+    - Real-ESRGAN and SwinIR integration
+    - GPU acceleration when available
+    - Progress tracking and cancellation support
+    - Tile-based processing for large images
+
+    3. Screenshot System:
+    - High-quality frame capture
+    - Multiple upscaling options (2x, 4x)
+    - Optional cropping with aspect ratio control
+    - Configurable output directory
+
+    4. Navigation Controls:
+    - Frame-by-frame navigation (←/→)
+    - Second jumps (Shift + ←/→)
+    - Minute jumps (Ctrl + ←/→)
+    - Play/Pause toggle
+    - Volume control
+
+    Dependencies:
+    - PyQt5: GUI framework and media playback
+    - OpenCV (cv2): Frame capture and image processing
+    - torch: AI model backend
+    - basicsr: AI model architectures
+    - realesrgan: Real-ESRGAN implementation
+
+    Example usage:
+        player = VideoPlayer()
+        player.load_video("path/to/video.mp4")
+        player.show()
+
+    Performance Considerations:
+    - GPU acceleration automatically detected and utilized
+    - Tile-based processing for large images
+    - Background processing for AI operations
+    - Memory-efficient handling of high-resolution content
+
+    @see @Project Structure#video_player.py
+    @see @Project#AI Enhancement
+    @see @Project#Screenshot System
     """
 
     def __init__(self):
