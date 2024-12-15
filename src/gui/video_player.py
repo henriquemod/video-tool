@@ -14,6 +14,7 @@ from .crop_dialog import CropDialog
 
 import torch
 import numpy as np
+from src.processing.ai_upscaling import AIUpscaler
 
 
 def generateIcon(icon_name, fromTheme=False):
@@ -30,244 +31,37 @@ def generateIcon(icon_name, fromTheme=False):
         return QIcon(pixmap)
 
 
-# Model URLs for SwinIR and Real-ESRGAN
-MODEL_URLS = {
-    'SwinIR-2x': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x2.pth',
-    'SwinIR-4x': 'https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth',
-    'Real-ESRGAN-2x': 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth',
-    'Real-ESRGAN-4x': 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth'
-}
-
-
 class UpscaleThread(QThread):
     """Thread for handling AI upscaling operations"""
     progress = pyqtSignal(int)
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, img, method, scale, device):
+    def __init__(self, img, method, scale):
         super().__init__()
         self.img = img
         self.method = method
         self.scale = scale
-        self.device = device
-        self._is_cancelled = False
+        self.upscaler = AIUpscaler()
 
     def run(self):
         try:
-            import torch
-            from basicsr.archs.rrdbnet_arch import RRDBNet
-            from basicsr.utils.download_util import load_file_from_url
-            from realesrgan import RealESRGANer
+            # Use the centralized upscaler
+            result = self.upscaler.upscale(
+                self.img,
+                self.method,
+                self.scale,
+                progress_callback=self.progress.emit
+            )
 
-            # Update progress
-            self.progress.emit(10)
-
-            output = None  # Initialize output variable
-
-            if "SwinIR" in self.method:
-                from basicsr.utils.registry import ARCH_REGISTRY
-
-                # Prepare the image
-                if self.img.shape[2] == 3:
-                    img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
-
-                # Update progress
-                self.progress.emit(20)
-
-                # Handle padding
-                h, w = img.shape[:2]
-                pad_h = (8 - h % 8) % 8
-                pad_w = (8 - w % 8) % 8
-
-                if pad_h > 0 or pad_w > 0:
-                    img = np.pad(
-                        img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
-
-                # Load model
-                if self.scale == 2:
-                    model_path = load_file_from_url(
-                        MODEL_URLS['SwinIR-2x'], model_dir='models')
-                else:
-                    model_path = load_file_from_url(
-                        MODEL_URLS['SwinIR-4x'], model_dir='models')
-
-                # Update progress
-                self.progress.emit(40)
-
-                if self._is_cancelled:
-                    return
-
-                # Initialize model
-                model = ARCH_REGISTRY.get('SwinIR')(
-                    upscale=self.scale,
-                    in_chans=3,
-                    img_size=64,
-                    window_size=8,
-                    img_range=1.,
-                    depths=[6, 6, 6, 6],
-                    embed_dim=60,
-                    num_heads=[6, 6, 6, 6],
-                    mlp_ratio=2,
-                    upsampler='pixelshuffledirect',
-                    resi_connection='1conv'
-                )
-
-                # Load weights
-                pretrained_model = torch.load(
-                    model_path, map_location=self.device)
-                if 'params_ema' in pretrained_model:
-                    pretrained_model = pretrained_model['params_ema']
-                elif 'params' in pretrained_model:
-                    pretrained_model = pretrained_model['params']
-
-                model.load_state_dict(pretrained_model, strict=True)
-                model.eval()
-                model.to(self.device)
-
-                # Update progress
-                self.progress.emit(60)
-
-                if self._is_cancelled:
-                    return
-
-                # Process image
-                img_tensor = torch.from_numpy(img).float().permute(
-                    2, 0, 1).unsqueeze(0) / 255.
-                img_tensor = img_tensor.to(self.device)
-
-                # Process in tiles if needed
-                tile_size = 640
-                tile_overlap = 32
-
-                b, c, h, w = img_tensor.shape
-                output = torch.zeros(
-                    (b, c, h * self.scale, w * self.scale), device=self.device)
-
-                if h > tile_size or w > tile_size:
-                    total_tiles = ((h - 1) // (tile_size - tile_overlap) + 1) * \
-                        ((w - 1) // (tile_size - tile_overlap) + 1)
-                    current_tile = 0
-
-                    for top in range(0, h, tile_size - tile_overlap):
-                        for left in range(0, w, tile_size - tile_overlap):
-                            if self._is_cancelled:
-                                return
-
-                            bottom = min(top + tile_size, h)
-                            right = min(left + tile_size, w)
-
-                            tile = img_tensor[:, :, top:bottom, left:right]
-
-                            with torch.no_grad():
-                                tile_output = model(tile)
-
-                            out_top = top * self.scale
-                            out_left = left * self.scale
-                            out_bottom = bottom * self.scale
-                            out_right = right * self.scale
-
-                            output[:, :, out_top:out_bottom,
-                                   out_left:out_right] = tile_output
-
-                            current_tile += 1
-                            progress = 60 + (current_tile / total_tiles) * 35
-                            self.progress.emit(int(progress))
-                else:
-                    with torch.no_grad():
-                        output = model(img_tensor)
-
-                # Final processing
-                output = output.squeeze().float().cpu().clamp_(0, 1).numpy()
-                output = (output * 255.0).round().astype(np.uint8)
-                output = output.transpose(1, 2, 0)
-
-                if pad_h > 0 or pad_w > 0:
-                    output = output[:h*self.scale, :w*self.scale, :]
-
-                output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
-
-            elif "Real-ESRGAN" in self.method:
-                try:
-                    # Initialize model with correct architecture for Real-ESRGAN
-                    model = RRDBNet(
-                        num_in_ch=3,
-                        num_out_ch=3,
-                        num_feat=64,
-                        num_block=23,
-                        num_grow_ch=32,
-                        scale=self.scale
-                    )
-
-                    # Select appropriate model based on scale
-                    if self.scale == 2:
-                        model_path = load_file_from_url(
-                            MODEL_URLS['Real-ESRGAN-2x'], model_dir='models')
-                    else:
-                        model_path = load_file_from_url(
-                            MODEL_URLS['Real-ESRGAN-4x'], model_dir='models')
-
-                    # Update progress
-                    self.progress.emit(30)
-
-                    if self._is_cancelled:
-                        return
-
-                    # Load pre-trained model state
-                    pretrained_model = torch.load(
-                        model_path, map_location=self.device)
-                    if 'params_ema' in pretrained_model:
-                        pretrained_model = pretrained_model['params_ema']
-                    elif 'params' in pretrained_model:
-                        pretrained_model = pretrained_model['params']
-                    else:
-                        raise KeyError(
-                            "No 'params_ema' or 'params' keys found in the model file.")
-
-                    model.load_state_dict(pretrained_model, strict=True)
-                    model.eval()
-                    model.to(self.device)
-
-                    # Initialize upsampler
-                    upsampler = RealESRGANer(
-                        scale=self.scale,
-                        model_path=model_path,
-                        model=model,
-                        tile=512,
-                        tile_pad=32,
-                        pre_pad=0,
-                        half=True if self.device == 'cuda' else False,
-                        device=self.device
-                    )
-
-                    # Update progress
-                    self.progress.emit(50)
-
-                    if self._is_cancelled:
-                        return
-
-                    # Process image
-                    output, _ = upsampler.enhance(
-                        self.img, outscale=self.scale)
-
-                except Exception as e:
-                    raise Exception(f"Real-ESRGAN processing failed: {str(e)}")
-
-            else:
-                raise Exception(f"Unsupported upscaling method: {self.method}")
-
-            # Ensure we have a valid output
-            if output is None:
-                raise Exception("Failed to generate output image")
-
-            self.progress.emit(100)
-            self.finished.emit(output)
+            if result is not None:
+                self.finished.emit(result)
 
         except Exception as e:
             self.error.emit(str(e))
 
     def cancel(self):
-        self._is_cancelled = True
+        self.upscaler.cancel()
 
 
 class VideoPlayer(QWidget):
@@ -404,6 +198,9 @@ class VideoPlayer(QWidget):
 
         # Initialize crop checkbox as False by default
         self.allowCrop = False
+
+        # Initialize upscaler
+        self.upscaler = AIUpscaler()
 
     def get_data_directory(self):
         """
@@ -775,16 +572,18 @@ class VideoPlayer(QWidget):
                 progress.setAutoReset(True)
 
                 # Create and configure upscale thread
-                device = torch.device(
-                    'cuda' if torch.cuda.is_available() else 'cpu')
-                self.upscale_thread = UpscaleThread(img, method, scale, device)
+                self.upscale_thread = UpscaleThread(img, method, scale)
 
                 # Connect signals
                 self.upscale_thread.progress.connect(progress.setValue)
-                self.upscale_thread.finished.connect(lambda result: self.handle_upscale_finished(
-                    result, processing_path, method, scale, progress))
+                self.upscale_thread.finished.connect(
+                    lambda result: self.handle_upscale_finished(
+                        result, processing_path, method, scale, progress
+                    )
+                )
                 self.upscale_thread.error.connect(
-                    lambda err: self.handle_upscale_error(err, progress))
+                    lambda err: self.handle_upscale_error(err, progress)
+                )
 
                 # Connect cancel button
                 progress.canceled.connect(self.upscale_thread.cancel)

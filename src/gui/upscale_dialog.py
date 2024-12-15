@@ -1,13 +1,13 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
-    QFileDialog
+    QFileDialog, QProgressDialog
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import os
 import cv2
 from pathlib import Path
-from ..processing.ai_upscaling import upscale_image, get_device
+from ..processing.ai_upscaling import AIUpscaler
 
 
 class ImageItem:
@@ -29,7 +29,7 @@ class UpscaleThread(QThread):
         self.output_dir = output_dir
         self.method = method
         self.scale = scale
-        self.device = get_device()
+        self.upscaler = AIUpscaler()
 
     def run(self):
         try:
@@ -46,9 +46,14 @@ class UpscaleThread(QThread):
                 if img is None:
                     raise Exception(f"Failed to load image: {image.path}")
 
-                # Perform upscaling
-                upscaled = upscale_image(
-                    img, self.method, self.scale, self.device)
+                # Use AIUpscaler instance for upscaling
+                upscaled = self.upscaler.upscale(
+                    img,
+                    self.method,
+                    self.scale,
+                    progress_callback=lambda p: self.progress.emit(
+                        int((i-1)/total_images*100 + p/total_images))
+                )
 
                 # Save output
                 output_path = os.path.join(
