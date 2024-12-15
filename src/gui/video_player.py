@@ -23,12 +23,13 @@ MODEL_URLS = {
     'Real-ESRGAN-4x': 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth'
 }
 
+
 class UpscaleThread(QThread):
     """Thread for handling AI upscaling operations"""
     progress = pyqtSignal(int)
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
-    
+
     def __init__(self, img, method, scale, device):
         super().__init__()
         self.img = img
@@ -36,49 +37,52 @@ class UpscaleThread(QThread):
         self.scale = scale
         self.device = device
         self._is_cancelled = False
-        
+
     def run(self):
         try:
             import torch
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from basicsr.utils.download_util import load_file_from_url
             from realesrgan import RealESRGANer
-            
+
             # Update progress
             self.progress.emit(10)
-            
+
             output = None  # Initialize output variable
-            
+
             if "SwinIR" in self.method:
                 from basicsr.utils.registry import ARCH_REGISTRY
-                
+
                 # Prepare the image
                 if self.img.shape[2] == 3:
                     img = cv2.cvtColor(self.img, cv2.COLOR_BGR2RGB)
-                
+
                 # Update progress
                 self.progress.emit(20)
-                
+
                 # Handle padding
                 h, w = img.shape[:2]
                 pad_h = (8 - h % 8) % 8
                 pad_w = (8 - w % 8) % 8
-                
+
                 if pad_h > 0 or pad_w > 0:
-                    img = np.pad(img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
-                
+                    img = np.pad(
+                        img, ((0, pad_h), (0, pad_w), (0, 0)), mode='reflect')
+
                 # Load model
                 if self.scale == 2:
-                    model_path = load_file_from_url(MODEL_URLS['SwinIR-2x'], model_dir='models')
+                    model_path = load_file_from_url(
+                        MODEL_URLS['SwinIR-2x'], model_dir='models')
                 else:
-                    model_path = load_file_from_url(MODEL_URLS['SwinIR-4x'], model_dir='models')
-                
+                    model_path = load_file_from_url(
+                        MODEL_URLS['SwinIR-4x'], model_dir='models')
+
                 # Update progress
                 self.progress.emit(40)
-                
+
                 if self._is_cancelled:
                     return
-                
+
                 # Initialize model
                 model = ARCH_REGISTRY.get('SwinIR')(
                     upscale=self.scale,
@@ -93,77 +97,81 @@ class UpscaleThread(QThread):
                     upsampler='pixelshuffledirect',
                     resi_connection='1conv'
                 )
-                
+
                 # Load weights
-                pretrained_model = torch.load(model_path, map_location=self.device)
+                pretrained_model = torch.load(
+                    model_path, map_location=self.device)
                 if 'params_ema' in pretrained_model:
                     pretrained_model = pretrained_model['params_ema']
                 elif 'params' in pretrained_model:
                     pretrained_model = pretrained_model['params']
-                
+
                 model.load_state_dict(pretrained_model, strict=True)
                 model.eval()
                 model.to(self.device)
-                
+
                 # Update progress
                 self.progress.emit(60)
-                
+
                 if self._is_cancelled:
                     return
-                
+
                 # Process image
-                img_tensor = torch.from_numpy(img).float().permute(2, 0, 1).unsqueeze(0) / 255.
+                img_tensor = torch.from_numpy(img).float().permute(
+                    2, 0, 1).unsqueeze(0) / 255.
                 img_tensor = img_tensor.to(self.device)
-                
+
                 # Process in tiles if needed
                 tile_size = 640
                 tile_overlap = 32
-                
+
                 b, c, h, w = img_tensor.shape
-                output = torch.zeros((b, c, h * self.scale, w * self.scale), device=self.device)
-                
+                output = torch.zeros(
+                    (b, c, h * self.scale, w * self.scale), device=self.device)
+
                 if h > tile_size or w > tile_size:
                     total_tiles = ((h - 1) // (tile_size - tile_overlap) + 1) * \
-                                ((w - 1) // (tile_size - tile_overlap) + 1)
+                        ((w - 1) // (tile_size - tile_overlap) + 1)
                     current_tile = 0
-                    
+
                     for top in range(0, h, tile_size - tile_overlap):
                         for left in range(0, w, tile_size - tile_overlap):
                             if self._is_cancelled:
                                 return
-                                
+
                             bottom = min(top + tile_size, h)
                             right = min(left + tile_size, w)
-                            
+
                             tile = img_tensor[:, :, top:bottom, left:right]
-                            
+
                             with torch.no_grad():
                                 tile_output = model(tile)
-                            
+
                             out_top = top * self.scale
                             out_left = left * self.scale
                             out_bottom = bottom * self.scale
                             out_right = right * self.scale
-                            
-                            output[:, :, out_top:out_bottom, out_left:out_right] = tile_output
-                            
+
+                            output[:, :, out_top:out_bottom,
+                                   out_left:out_right] = tile_output
+
                             current_tile += 1
                             progress = 60 + (current_tile / total_tiles) * 35
                             self.progress.emit(int(progress))
                 else:
                     with torch.no_grad():
                         output = model(img_tensor)
-                
+
                 # Final processing
                 output = output.squeeze().float().cpu().clamp_(0, 1).numpy()
                 output = (output * 255.0).round().astype(np.uint8)
                 output = output.transpose(1, 2, 0)
-                
+
                 if pad_h > 0 or pad_w > 0:
                     output = output[:h*self.scale, :w*self.scale, :]
-                
+
                 output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
-                
+
             elif "Real-ESRGAN" in self.method:
                 try:
                     # Initialize model with correct architecture for Real-ESRGAN
@@ -175,32 +183,36 @@ class UpscaleThread(QThread):
                         num_grow_ch=32,
                         scale=self.scale
                     )
-                    
+
                     # Select appropriate model based on scale
                     if self.scale == 2:
-                        model_path = load_file_from_url(MODEL_URLS['Real-ESRGAN-2x'], model_dir='models')
+                        model_path = load_file_from_url(
+                            MODEL_URLS['Real-ESRGAN-2x'], model_dir='models')
                     else:
-                        model_path = load_file_from_url(MODEL_URLS['Real-ESRGAN-4x'], model_dir='models')
-                    
+                        model_path = load_file_from_url(
+                            MODEL_URLS['Real-ESRGAN-4x'], model_dir='models')
+
                     # Update progress
                     self.progress.emit(30)
-                    
+
                     if self._is_cancelled:
                         return
-                    
+
                     # Load pre-trained model state
-                    pretrained_model = torch.load(model_path, map_location=self.device)
+                    pretrained_model = torch.load(
+                        model_path, map_location=self.device)
                     if 'params_ema' in pretrained_model:
                         pretrained_model = pretrained_model['params_ema']
                     elif 'params' in pretrained_model:
                         pretrained_model = pretrained_model['params']
                     else:
-                        raise KeyError("No 'params_ema' or 'params' keys found in the model file.")
-                    
+                        raise KeyError(
+                            "No 'params_ema' or 'params' keys found in the model file.")
+
                     model.load_state_dict(pretrained_model, strict=True)
                     model.eval()
                     model.to(self.device)
-                    
+
                     # Initialize upsampler
                     upsampler = RealESRGANer(
                         scale=self.scale,
@@ -212,34 +224,36 @@ class UpscaleThread(QThread):
                         half=True if self.device == 'cuda' else False,
                         device=self.device
                     )
-                    
+
                     # Update progress
                     self.progress.emit(50)
-                    
+
                     if self._is_cancelled:
                         return
-                    
+
                     # Process image
-                    output, _ = upsampler.enhance(self.img, outscale=self.scale)
-                    
+                    output, _ = upsampler.enhance(
+                        self.img, outscale=self.scale)
+
                 except Exception as e:
                     raise Exception(f"Real-ESRGAN processing failed: {str(e)}")
-            
+
             else:
                 raise Exception(f"Unsupported upscaling method: {self.method}")
-            
+
             # Ensure we have a valid output
             if output is None:
                 raise Exception("Failed to generate output image")
-            
+
             self.progress.emit(100)
             self.finished.emit(output)
-            
+
         except Exception as e:
             self.error.emit(str(e))
-    
+
     def cancel(self):
         self._is_cancelled = True
+
 
 class VideoPlayer(QWidget):
     """
@@ -416,13 +430,15 @@ class VideoPlayer(QWidget):
             import torch
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from realesrgan import RealESRGANer
-            
+
             # Check for GPU support
             has_cuda = torch.cuda.is_available()
-            has_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+            has_mps = hasattr(
+                torch.backends, 'mps') and torch.backends.mps.is_available()
 
             if has_cuda:
-                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
+                gpu_memory = torch.cuda.get_device_properties(
+                    0).total_memory / 1024**3  # Convert to GB
                 print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
                 return True
             elif has_mps:
@@ -431,11 +447,12 @@ class VideoPlayer(QWidget):
             else:
                 print("No compatible GPU detected, AI upscaling will use CPU (slow)")
                 return False
-            
+
         except ImportError as e:
             print(f"AI capabilities not available: {str(e)}")
             print("To enable AI upscaling, install required packages with:")
-            print("pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
+            print(
+                "pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
             return False
         except Exception as e:
             print(f"Error checking AI capabilities: {str(e)}")
@@ -456,14 +473,18 @@ class VideoPlayer(QWidget):
         self.forwardMinButton = QPushButton("1m ▶▶")
 
         # Connect button signals
-        self.backMinButton.clicked.connect(lambda: self.seek_relative(-60000))  # -1 min
-        self.backSecButton.clicked.connect(lambda: self.seek_relative(-1000))   # -1 sec
+        self.backMinButton.clicked.connect(
+            lambda: self.seek_relative(-60000))  # -1 min
+        self.backSecButton.clicked.connect(
+            lambda: self.seek_relative(-1000))   # -1 sec
         self.backFrameButton.clicked.connect(lambda: self.seek_frames(-1))
         self.playButton.clicked.connect(self.toggle_playback)
         self.stopButton.clicked.connect(self.stop_video)
         self.forwardFrameButton.clicked.connect(lambda: self.seek_frames(1))
-        self.forwardSecButton.clicked.connect(lambda: self.seek_relative(1000))    # +1 sec
-        self.forwardMinButton.clicked.connect(lambda: self.seek_relative(60000))   # +1 min
+        self.forwardSecButton.clicked.connect(
+            lambda: self.seek_relative(1000))    # +1 sec
+        self.forwardMinButton.clicked.connect(
+            lambda: self.seek_relative(60000))   # +1 min
 
         # Add buttons to layout in the desired sequence
         controlsLayout.addWidget(self.backMinButton)
@@ -567,19 +588,20 @@ class VideoPlayer(QWidget):
     def load_video(self, file_path):
         """
         Initializes video playback for the specified file path.
-        
+
         Args:
             file_path (str): Path to the video file
         """
         self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
         self.cap = cv2.VideoCapture(file_path)
         if not self.cap.isOpened():
-            QMessageBox.critical(self, "Error", "Failed to open video with OpenCV.")
+            QMessageBox.critical(
+                self, "Error", "Failed to open video with OpenCV.")
         else:
             # Start playback automatically
             self.mediaPlayer.play()
             self.playButton.setText("Pause")
-    
+
     def toggle_playback(self):
         """Toggle between play and pause."""
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
@@ -588,12 +610,12 @@ class VideoPlayer(QWidget):
         else:
             self.mediaPlayer.play()
             self.playButton.setText("Pause")
-    
+
     def stop_video(self):
         """Stop video playback."""
         self.mediaPlayer.stop()
         self.playButton.setText("Play")
-    
+
     def set_position(self, position):
         """Set the media player position."""
         self.mediaPlayer.setPosition(position)
@@ -637,42 +659,44 @@ class VideoPlayer(QWidget):
     def take_screenshot(self):
         """
         Captures the current frame as a high-quality screenshot.
-        
+
         Features:
         - Captures frame at original video resolution
         - Saves with timestamp-based filename
         - Optional cropping through CropDialog
         - Configurable output directory
-        
+
         @anchor #screenshot-functionality
         @see @Project#Screenshot Capability
         """
-        
+
         # Get the current position of the video
         current_position = self.mediaPlayer.position()
-        
+
         # Set the video capture to the current position
         self.cap.set(cv2.CAP_PROP_POS_MSEC, current_position)
-        
+
         # Read the current frame
         ret, frame = self.cap.read()
         if not ret:
-            QMessageBox.critical(self, "Error", "Failed to capture frame from video.")
+            QMessageBox.critical(
+                self, "Error", "Failed to capture frame from video.")
             return
-        
+
         # Generate filename with timestamp
         filename = f"screenshot_{current_position}.png"
-        
+
         # Use outputFolder if defined, otherwise use root project path
-        save_path = os.path.join(getattr(self, 'outputFolder', os.path.dirname(os.path.abspath(__file__))), filename)
-        
+        save_path = os.path.join(getattr(
+            self, 'outputFolder', os.path.dirname(os.path.abspath(__file__))), filename)
+
         # Save the original screenshot
         cv2.imwrite(save_path, frame)
         print(f"Original screenshot saved: {save_path}")
-        
+
         processing_path = save_path
         final_path = save_path
-        
+
         # Handle cropping if enabled
         if hasattr(self, 'allowCrop') and self.allowCrop:
             try:
@@ -682,9 +706,10 @@ class VideoPlayer(QWidget):
                     if processing_path:
                         print(f"Cropped image saved: {processing_path}")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to crop image: {str(e)}")
+                QMessageBox.critical(
+                    self, "Error", f"Failed to crop image: {str(e)}")
                 return
-        
+
         # Handle upscaling based on selected option
         selected_upscale = self.upscale_combo.currentText()
         if selected_upscale != "No Upscaling":
@@ -692,96 +717,73 @@ class VideoPlayer(QWidget):
                 # Parse method and scale
                 method, scale = selected_upscale.split(" ")
                 scale = int(scale.strip("()x"))
-                
+
                 # Read the image to upscale
                 img = cv2.imread(processing_path)
                 if img is None:
                     raise Exception("Failed to load image for upscaling")
-                
+
                 # Create progress dialog
-                progress = QProgressDialog("Upscaling image...", "Cancel", 0, 100, self)
+                progress = QProgressDialog(
+                    "Upscaling image...", "Cancel", 0, 100, self)
                 progress.setWindowModality(Qt.WindowModal)
                 progress.setAutoClose(True)
                 progress.setAutoReset(True)
-                
+
                 # Create and configure upscale thread
-                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                device = torch.device(
+                    'cuda' if torch.cuda.is_available() else 'cpu')
                 self.upscale_thread = UpscaleThread(img, method, scale, device)
-                
+
                 # Connect signals
                 self.upscale_thread.progress.connect(progress.setValue)
                 self.upscale_thread.finished.connect(lambda result: self.handle_upscale_finished(
                     result, processing_path, method, scale, progress))
-                self.upscale_thread.error.connect(lambda err: self.handle_upscale_error(err, progress))
-                
+                self.upscale_thread.error.connect(
+                    lambda err: self.handle_upscale_error(err, progress))
+
                 # Connect cancel button
                 progress.canceled.connect(self.upscale_thread.cancel)
-                
+
                 # Start thread
                 self.upscale_thread.start()
-                
+
                 # Show progress dialog
                 progress.exec_()
                 return
-                
+
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to upscale image: {str(e)}")
+                QMessageBox.critical(
+                    self, "Error", f"Failed to upscale image: {str(e)}")
                 return
-        
+
         # Show success message with all saved paths
-        saved_paths = [p for p in [save_path, processing_path, final_path] 
-                      if p and os.path.exists(p) and p != save_path]
-        
+        saved_paths = [p for p in [save_path, processing_path, final_path]
+                       if p and os.path.exists(p) and p != save_path]
+
         if saved_paths:
             message = "Files saved:\n" + "\n".join(saved_paths)
         else:
             message = f"Screenshot saved: {save_path}"
-        
+
         QMessageBox.information(self, "Success", message)
 
     def closeEvent(self, event):
         """
         Handles cleanup when the video player widget is closed.
-        
+
         Ensures proper release of system resources:
         - Closes OpenCV video capture
         - Releases media player resources
-        
+
         Args:
             event (QCloseEvent): The close event to handle
-            
+
         @anchor #resource-cleanup
         """
         if self.cap and self.cap.isOpened():
             self.cap.release()
         event.accept()
-
-    def check_gpu_capabilities(self):
-        """Check for GPU acceleration capabilities."""
-        try:
-            import torch
-            
-            # Check for CUDA (NVIDIA) or MPS (Apple Silicon) support
-            has_cuda = torch.cuda.is_available()
-            has_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
-            
-            if has_cuda:
-                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
-                print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
-                return True
-            elif has_mps:
-                print("Apple Metal GPU detected")
-                return True
-            else:
-                print("No compatible GPU detected, AI upscaling will use CPU")
-                return False
-            
-        except ImportError:
-            print("PyTorch not installed, AI upscaling will use CPU")
-            return False
-        except Exception as e:
-            print(f"Error checking GPU capabilities: {str(e)}")
-            return False
 
     def toggle_crop(self, state):
         """Toggle crop functionality"""
@@ -790,7 +792,7 @@ class VideoPlayer(QWidget):
     def seek_relative(self, ms):
         """
         Seek relative to current position by specified milliseconds.
-        
+
         Args:
             ms (int): Milliseconds to seek (positive or negative)
         """
@@ -801,28 +803,28 @@ class VideoPlayer(QWidget):
     def seek_frames(self, frames):
         """
         Seek by specified number of frames forward or backward.
-        
+
         Args:
             frames (int): Number of frames to seek (positive or negative)
         """
         if not self.cap:
             return
-        
+
         # Get current frame rate
         fps = self.cap.get(cv2.CAP_PROP_FPS)
         if fps <= 0:
             return
-        
+
         # Calculate milliseconds per frame
         ms_per_frame = int(1000 / fps)
-        
+
         # Seek by calculated milliseconds
         self.seek_relative(frames * ms_per_frame)
 
     def keyPressEvent(self, event):
         """
         Handle keyboard shortcuts for frame navigation.
-        
+
         Left/Right arrows for frame-by-frame
         Shift + Left/Right for second jumps
         Ctrl + Left/Right for minute jumps
@@ -847,7 +849,7 @@ class VideoPlayer(QWidget):
     def handle_upscale_finished(self, result, processing_path, method, scale, progress_dialog):
         """
         Handle the completion of the upscaling process.
-        
+
         Args:
             result: The upscaled image
             processing_path (str): Path of the input image
@@ -858,24 +860,24 @@ class VideoPlayer(QWidget):
         try:
             # Close progress dialog
             progress_dialog.close()
-            
+
             if result is None:
                 raise Exception("Upscaling failed: No output received")
-            
+
             # Generate output filename
             base_path = os.path.splitext(processing_path)[0]
             output_path = f"{base_path}_{method}_{scale}x.png"
-            
+
             # Save the upscaled image
             cv2.imwrite(output_path, result)
-            
+
             # Show success message
             QMessageBox.information(
                 self,
                 "Success",
                 f"Upscaled image saved:\n{output_path}"
             )
-            
+
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -886,14 +888,14 @@ class VideoPlayer(QWidget):
     def handle_upscale_error(self, error_message, progress_dialog):
         """
         Handle errors that occur during upscaling.
-        
+
         Args:
             error_message (str): The error message
             progress_dialog (QProgressDialog): Progress dialog to close
         """
         # Close progress dialog
         progress_dialog.close()
-        
+
         # Show error message
         QMessageBox.critical(
             self,
