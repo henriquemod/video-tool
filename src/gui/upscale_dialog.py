@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import os
 import cv2
 from pathlib import Path
-from ..processing.ai_upscaling import AIUpscaler
+from ..processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
 
 
 class ImageItem:
@@ -23,12 +23,11 @@ class UpscaleThread(QThread):
     image_progress = pyqtSignal(int, int)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, images, output_dir, method, scale):
+    def __init__(self, images, output_dir, model_id: str):
         super().__init__()
         self.images = images
         self.output_dir = output_dir
-        self.method = method
-        self.scale = scale
+        self.model_id = model_id
         self.upscaler = AIUpscaler()
 
     def run(self):
@@ -49,8 +48,7 @@ class UpscaleThread(QThread):
                 # Use AIUpscaler instance for upscaling
                 upscaled = self.upscaler.upscale(
                     img,
-                    self.method,
-                    self.scale,
+                    self.model_id,
                     progress_callback=lambda p: self.progress.emit(
                         int((i-1)/total_images*100 + p/total_images))
                 )
@@ -58,7 +56,7 @@ class UpscaleThread(QThread):
                 # Save output
                 output_path = os.path.join(
                     self.output_dir,
-                    f"upscaled_{self.method}_{self.scale}x_{Path(image.path).name}"
+                    f"upscaled_{Path(image.path).name}"
                 )
                 cv2.imwrite(output_path, upscaled)
 
@@ -226,21 +224,9 @@ class UpscaleDialog(QDialog):
         # Method selection
         method_label = QLabel("Method:")
         self.method_combo = QComboBox()
-        self.method_combo.addItems([
-            "Bicubic",
-            "Lanczos",
-            "Real-ESRGAN",
-            "SwinIR"
-        ])
+        self.method_combo.addItems(get_model_names())
         options_layout.addWidget(method_label)
         options_layout.addWidget(self.method_combo)
-
-        # Scale selection
-        scale_label = QLabel("Scale:")
-        self.scale_combo = QComboBox()
-        self.scale_combo.addItems(["2x", "4x"])
-        options_layout.addWidget(scale_label)
-        options_layout.addWidget(self.scale_combo)
 
         layout.addLayout(options_layout)
 
@@ -328,9 +314,9 @@ class UpscaleDialog(QDialog):
                 self, "Error", "Please add at least one image to upscale")
             return
 
-        # Get selected method and scale
-        method = self.method_combo.currentText()
-        scale = int(self.scale_combo.currentText().replace('x', ''))
+        # Get selected model
+        selected_model = get_available_models(
+        )[self.method_combo.currentIndex()]
 
         output_dir = os.path.join(os.path.dirname(
             os.path.dirname(os.path.dirname(__file__))), 'output')
@@ -347,7 +333,7 @@ class UpscaleDialog(QDialog):
 
         # Create and configure upscale thread
         self.upscale_thread = UpscaleThread(
-            self.images, output_dir, method, scale)
+            self.images, output_dir, selected_model.id)
         self.upscale_thread.progress.connect(self.progress_bar.setValue)
         self.upscale_thread.image_progress.connect(self.update_progress_label)
         self.upscale_thread.finished.connect(self.upscale_finished)

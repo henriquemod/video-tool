@@ -14,7 +14,7 @@ from .crop_dialog import CropDialog
 
 import torch
 import numpy as np
-from src.processing.ai_upscaling import AIUpscaler
+from src.processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
 
 
 def generateIcon(icon_name, fromTheme=False):
@@ -37,11 +37,10 @@ class UpscaleThread(QThread):
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, img, method, scale):
+    def __init__(self, img, model_id: str, progress_callback=None):
         super().__init__()
         self.img = img
-        self.method = method
-        self.scale = scale
+        self.model_id = model_id
         self.upscaler = AIUpscaler()
 
     def run(self):
@@ -49,8 +48,7 @@ class UpscaleThread(QThread):
             # Use the centralized upscaler
             result = self.upscaler.upscale(
                 self.img,
-                self.method,
-                self.scale,
+                self.model_id,
                 progress_callback=self.progress.emit
             )
 
@@ -362,20 +360,7 @@ class VideoPlayer(QWidget):
         controls_layout.addWidget(upscale_label)
 
         self.upscale_combo = QComboBox()
-        options = [
-            "No Upscaling",
-            "Bicubic (2x)",
-            "Bicubic (3x)",
-            "Bicubic (4x)",
-            "Lanczos (2x)",
-            "Lanczos (3x)",
-            "Lanczos (4x)",
-            "Real-ESRGAN (2x)",
-            "Real-ESRGAN (4x)",
-            "SwinIR (2x)",
-            "SwinIR (4x)",
-        ]
-        self.upscale_combo.addItems(options)
+        self.upscale_combo.addItems(get_model_names())
         controls_layout.addWidget(self.upscale_combo)
 
         # Add performance warning label
@@ -552,13 +537,10 @@ class VideoPlayer(QWidget):
                 return
 
         # Handle upscaling based on selected option
-        selected_upscale = self.upscale_combo.currentText()
-        if selected_upscale != "No Upscaling":
+        selected_model = get_available_models(
+        )[self.upscale_combo.currentIndex()]
+        if selected_model.id != "no_upscale":
             try:
-                # Parse method and scale
-                method, scale = selected_upscale.split(" ")
-                scale = int(scale.strip("()x"))
-
                 # Read the image to upscale
                 img = cv2.imread(processing_path)
                 if img is None:
@@ -572,13 +554,13 @@ class VideoPlayer(QWidget):
                 progress.setAutoReset(True)
 
                 # Create and configure upscale thread
-                self.upscale_thread = UpscaleThread(img, method, scale)
+                self.upscale_thread = UpscaleThread(img, selected_model.id)
 
                 # Connect signals
                 self.upscale_thread.progress.connect(progress.setValue)
                 self.upscale_thread.finished.connect(
                     lambda result: self.handle_upscale_finished(
-                        result, processing_path, method, scale, progress
+                        result, processing_path, selected_model.id, selected_model.scale, progress
                     )
                 )
                 self.upscale_thread.error.connect(
