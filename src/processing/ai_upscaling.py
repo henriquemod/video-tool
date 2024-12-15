@@ -1,6 +1,5 @@
 import torch
 import cv2
-import os
 import numpy as np
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
