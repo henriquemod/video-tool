@@ -303,6 +303,9 @@ class VideoPlayer(QWidget):
         # Initialize outputFolder with a default path
         self.outputFolder = QDir.currentPath()
 
+        # Initialize ai_capable attribute
+        self.ai_capable = self.check_ai_capabilities()
+
         # Set up the video player
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         self.videoWidget = QVideoWidget()
@@ -310,9 +313,9 @@ class VideoPlayer(QWidget):
         # Initialize OpenCV VideoCapture
         self.cap = None
 
-        # Set up the layout
-        layout = QVBoxLayout()
-        layout.addWidget(self.videoWidget)
+        # Set up the main layout
+        mainLayout = QVBoxLayout()
+        mainLayout.addWidget(self.videoWidget)
 
         # Set up the media player
         self.mediaPlayer.setVideoOutput(self.videoWidget)
@@ -363,20 +366,99 @@ class VideoPlayer(QWidget):
         self.screenshotButton.clicked.connect(self.take_screenshot)
         sliderLayout.addWidget(self.screenshotButton)
 
-        layout.addLayout(sliderLayout)
+        mainLayout.addLayout(sliderLayout)
 
         # Add playback controls
+        self.setup_playback_controls(mainLayout)
+
+        # Add additional options (Upscale and Crop)
+        if self.ai_capable:
+            self.add_upscale_controls(mainLayout)
+        self.add_crop_controls(mainLayout)
+
+        self.setLayout(mainLayout)
+
+        # Connect media player signals
+        self.mediaPlayer.positionChanged.connect(self.position_changed)
+        self.mediaPlayer.durationChanged.connect(self.duration_changed)
+        self.mediaPlayer.stateChanged.connect(self.media_state_changed)
+
+        # Initialize crop checkbox as False by default
+        self.allowCrop = False
+
+    def get_data_directory(self):
+        """
+        Returns the directory where video data is stored.
+        Modify this method to return the appropriate path as needed.
+        """
+        # Example: Return user's Videos directory
+        return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+
+    def check_ai_capabilities(self):
+        """Check if system can run AI upscaling."""
+        try:
+            # First try to import required modules
+            import torch
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            from realesrgan import RealESRGANer
+            
+            # Check for GPU support
+            has_cuda = torch.cuda.is_available()
+            has_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+
+            if has_cuda:
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
+                print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
+                return True
+            elif has_mps:
+                print("Apple Metal GPU detected")
+                return True
+            else:
+                print("No compatible GPU detected, AI upscaling will use CPU (slow)")
+                return False
+            
+        except ImportError as e:
+            print(f"AI capabilities not available: {str(e)}")
+            print("To enable AI upscaling, install required packages with:")
+            print("pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
+            return False
+        except Exception as e:
+            print(f"Error checking AI capabilities: {str(e)}")
+            return False
+
+    def setup_playback_controls(self, parent_layout):
+        """Set up the playback control buttons in sequence."""
         controlsLayout = QHBoxLayout()
 
-        # Play/Pause Button
+        # Navigation buttons with icons or text
+        self.backMinButton = QPushButton("◀◀ 1m")
+        self.backSecButton = QPushButton("◀ 1s")
+        self.backFrameButton = QPushButton("◀ 1f")
         self.playButton = QPushButton("Play")
-        self.playButton.clicked.connect(self.toggle_playback)
-        controlsLayout.addWidget(self.playButton)
-
-        # Stop Button
         self.stopButton = QPushButton("Stop")
+        self.forwardFrameButton = QPushButton("1f ▶")
+        self.forwardSecButton = QPushButton("1s ▶")
+        self.forwardMinButton = QPushButton("1m ▶▶")
+
+        # Connect button signals
+        self.backMinButton.clicked.connect(lambda: self.seek_relative(-60000))  # -1 min
+        self.backSecButton.clicked.connect(lambda: self.seek_relative(-1000))   # -1 sec
+        self.backFrameButton.clicked.connect(lambda: self.seek_frames(-1))
+        self.playButton.clicked.connect(self.toggle_playback)
         self.stopButton.clicked.connect(self.stop_video)
+        self.forwardFrameButton.clicked.connect(lambda: self.seek_frames(1))
+        self.forwardSecButton.clicked.connect(lambda: self.seek_relative(1000))    # +1 sec
+        self.forwardMinButton.clicked.connect(lambda: self.seek_relative(60000))   # +1 min
+
+        # Add buttons to layout in the desired sequence
+        controlsLayout.addWidget(self.backMinButton)
+        controlsLayout.addWidget(self.backSecButton)
+        controlsLayout.addWidget(self.backFrameButton)
+        controlsLayout.addWidget(self.playButton)
         controlsLayout.addWidget(self.stopButton)
+        controlsLayout.addWidget(self.forwardFrameButton)
+        controlsLayout.addWidget(self.forwardSecButton)
+        controlsLayout.addWidget(self.forwardMinButton)
 
         # Volume Control
         self.volumeSlider = QSlider(Qt.Horizontal)
@@ -387,50 +469,85 @@ class VideoPlayer(QWidget):
         controlsLayout.addWidget(QLabel("Volume"))
         controlsLayout.addWidget(self.volumeSlider)
 
-        # Playback Speed Control
-        self.speedSlider = QSlider(Qt.Horizontal)
-        self.speedSlider.setRange(50, 200)  # 0.5x to 2.0x
-        self.speedSlider.setValue(100)  # Default speed (1.0x)
-        self.speedSlider.setFixedWidth(100)
-        self.speedSlider.valueChanged.connect(self.set_playback_speed)
-        controlsLayout.addWidget(QLabel("Speed"))
-        controlsLayout.addWidget(self.speedSlider)
+        parent_layout.addLayout(controlsLayout)
 
-        # FullScreen Button
-        self.fullscreenButton = QPushButton("Fullscreen")
-        self.fullscreenButton.clicked.connect(self.toggle_fullscreen)
-        controlsLayout.addWidget(self.fullscreenButton)
+    def add_upscale_controls(self, parent_layout):
+        """Add upscale options to the layout."""
+        upscale_layout = QHBoxLayout()
 
-        layout.addLayout(controlsLayout)
+        # Add upscale label
+        upscale_label = QLabel("Upscale:")
+        upscale_layout.addWidget(upscale_label)
 
-        self.setLayout(layout)
+        # Create combo box
+        self.upscale_combo = QComboBox()
 
-        # Connect media player signals
-        self.mediaPlayer.positionChanged.connect(self.position_changed)
-        self.mediaPlayer.durationChanged.connect(self.duration_changed)
-        self.mediaPlayer.stateChanged.connect(self.media_state_changed)
+        # Add all options
+        options = [
+            "No Upscaling",
+            "Bicubic (2x)",
+            "Bicubic (3x)",
+            "Bicubic (4x)",
+            "Lanczos (2x)",
+            "Lanczos (3x)",
+            "Lanczos (4x)",
+            "Real-ESRGAN (2x)",
+            "Real-ESRGAN (4x)",
+            "SwinIR (2x)",
+            "SwinIR (4x)",
+        ]
+        self.upscale_combo.addItems(options)
+        upscale_layout.addWidget(self.upscale_combo)
 
-        # Initialize crop checkbox as False by default
-        self.allowCrop = False
+        # Add performance warning label
+        self.performance_label = QLabel()
+        self.performance_label.setStyleSheet("""
+            QLabel {
+                color: #FF8C00;  /* Dark Orange */
+                font-weight: bold;
+                padding: 2px 5px;
+                border-radius: 3px;
+                background-color: rgba(255, 140, 0, 0.1);
+            }
+        """)
+        upscale_layout.addWidget(self.performance_label)
+        self.performance_label.hide()  # Initially hidden
 
-        # Check AI capabilities before adding upscale options
-        self.ai_capable = self.check_ai_capabilities()
-        self.add_upscale_checkbox()
+        # Check AI capabilities and update UI
+        has_gpu = self.check_ai_capabilities()
 
-    def open_file(self):
-        """
-        Opens a file dialog for video selection and loads the selected video.
-        
-        Supports common video formats (MP4, AVI, MKV, MOV) and handles file loading errors.
-        
-        @anchor #video-file-loading
-        """
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open Video", QDir.homePath(),
-            "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)"
+        # Connect combo box change event
+        self.upscale_combo.currentTextChanged.connect(
+            lambda text: self.on_upscale_option_changed(text, has_gpu)
         )
-        if file_path:
-            self.load_video(file_path)
+
+        parent_layout.addLayout(upscale_layout)
+
+    def add_crop_controls(self, parent_layout):
+        """Add crop checkbox to the layout."""
+        crop_layout = QHBoxLayout()
+
+        # Create and setup crop checkbox
+        self.cropCheckbox = QCheckBox("Crop Image")
+        self.allowCrop = False  # Initialize the crop flag
+        self.cropCheckbox.setChecked(self.allowCrop)
+        self.cropCheckbox.stateChanged.connect(self.toggle_crop)
+
+        # Add checkbox to layout
+        crop_layout.addWidget(self.cropCheckbox)
+
+        parent_layout.addLayout(crop_layout)
+
+    def on_upscale_option_changed(self, text, has_gpu):
+        """Handle upscale option changes and update performance warning."""
+        if "Real-ESRGAN" in text:
+            if not has_gpu:
+                self.performance_label.setText("⚠️ CPU Mode (Slow)")
+                self.performance_label.show()
+            else:
+                self.performance_label.hide()
+        else:
+            self.performance_label.hide()
 
     def load_video(self, file_path):
         """
@@ -438,11 +555,6 @@ class VideoPlayer(QWidget):
         
         Args:
             file_path (str): Path to the video file
-            
-        Handles both QMediaPlayer and OpenCV initialization for synchronized
-        playback and frame capture capabilities.
-        
-        @anchor #video-loading-implementation
         """
         self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
         self.cap = cv2.VideoCapture(file_path)
@@ -452,7 +564,7 @@ class VideoPlayer(QWidget):
             # Start playback automatically
             self.mediaPlayer.play()
             self.playButton.setText("Pause")
-
+    
     def toggle_playback(self):
         """Toggle between play and pause."""
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
@@ -461,12 +573,12 @@ class VideoPlayer(QWidget):
         else:
             self.mediaPlayer.play()
             self.playButton.setText("Pause")
-
+    
     def stop_video(self):
         """Stop video playback."""
         self.mediaPlayer.stop()
         self.playButton.setText("Play")
-
+    
     def set_position(self, position):
         """Set the media player position."""
         self.mediaPlayer.setPosition(position)
@@ -629,64 +741,6 @@ class VideoPlayer(QWidget):
             self.cap.release()
         event.accept()
 
-    def add_upscale_checkbox(self):
-        """Add upscale options to controls."""
-        # Create layout for upscale controls
-        upscale_layout = QHBoxLayout()
-        
-        # Add upscale label
-        upscale_label = QLabel("Upscale:")
-        upscale_layout.addWidget(upscale_label)
-        
-        # Create combo box
-        self.upscale_combo = QComboBox()
-        
-        # Add all options
-        options = [
-            "No Upscaling",
-            "Bicubic (2x)",
-            "Bicubic (3x)",
-            "Bicubic (4x)",
-            "Lanczos (2x)",
-            "Lanczos (3x)",
-            "Lanczos (4x)",
-            "Real-ESRGAN (2x)",
-            "Real-ESRGAN (4x)",
-            "SwinIR (2x)",
-            "SwinIR (4x)",
-        ]
-        self.upscale_combo.addItems(options)
-        upscale_layout.addWidget(self.upscale_combo)
-        
-        # Add performance warning label
-        self.performance_label = QLabel()
-        self.performance_label.setStyleSheet("""
-            QLabel {
-                color: #FF8C00;  /* Dark Orange */
-                font-weight: bold;
-                padding: 2px 5px;
-                border-radius: 3px;
-                background-color: rgba(255, 140, 0, 0.1);
-            }
-        """)
-        upscale_layout.addWidget(self.performance_label)
-        self.performance_label.hide()  # Initially hidden
-        
-        # Check AI capabilities and update UI
-        has_gpu = self.check_gpu_capabilities()
-        
-        # Connect combo box change event
-        self.upscale_combo.currentTextChanged.connect(
-            lambda text: self.on_upscale_option_changed(text, has_gpu)
-        )
-        
-        # Get the controls layout
-        layout = self.layout()
-        controlsLayout = layout.itemAt(2).layout()  # Get the controls layout
-        
-        # Add the upscale layout to controls
-        controlsLayout.insertLayout(2, upscale_layout)
-
     def check_gpu_capabilities(self):
         """Check for GPU acceleration capabilities."""
         try:
@@ -714,101 +768,120 @@ class VideoPlayer(QWidget):
             print(f"Error checking GPU capabilities: {str(e)}")
             return False
 
-    def on_upscale_option_changed(self, text, has_gpu):
-        """Handle upscale option changes and update performance warning."""
-        if "Real-ESRGAN" in text:
-            if not has_gpu:
-                self.performance_label.setText("⚠️ CPU Mode (Slow)")
-                self.performance_label.show()
-            else:
-                self.performance_label.hide()
-        else:
-            self.performance_label.hide()
-
-    def handle_upscale_finished(self, result, processing_path, method, scale, progress_dialog):
-        """Handle completion of upscaling process"""
-        if result is not None:
-            try:
-                # Generate upscaled filename
-                base_path = os.path.splitext(processing_path)[0]
-                final_path = f"{base_path}_upscaled_{method}_{scale}x.png"
-                
-                # Save upscaled image
-                cv2.imwrite(final_path, result)
-                
-                # Close progress dialog
-                progress_dialog.close()
-                
-                # Show success message
-                QMessageBox.information(self, "Success", f"Upscaled image saved: {final_path}")
-                
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to save upscaled image: {str(e)}")
-    
-    def handle_upscale_error(self, error_message, progress_dialog):
-        """Handle upscaling errors"""
-        progress_dialog.close()
-        QMessageBox.critical(self, "Error", f"Upscaling failed: {error_message}")
-
-    def check_ai_capabilities(self):
-        """Check if system can run AI upscaling."""
-        try:
-            # First try to import numpy with specific version
-            import numpy as np
-            if np.__version__.startswith('2'):
-                print("Warning: NumPy 2.x detected, downgrading may be required")
-            
-            import torch
-            from basicsr.archs.rrdbnet_arch import RRDBNet
-            from realesrgan import RealESRGANer
-            
-            # Check if CUDA is available
-            has_cuda = torch.cuda.is_available()
-            
-            # Check if MPS (Metal Performance Shaders for Mac) is available
-            has_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
-            
-            # Check available GPU memory
-            if has_cuda:
-                gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
-                print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
-            elif has_mps:
-                print("Apple Metal GPU detected")
-            else:
-                print("No compatible GPU detected, AI upscaling will use CPU (slow)")
-            
-            return True
-            
-        except ImportError as e:
-            print(f"AI capabilities not available: {str(e)}")
-            print("To enable AI upscaling, install required packages with:")
-            print("pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
-            return False
-        except Exception as e:
-            print(f"Error checking AI capabilities: {str(e)}")
-            return False
-
-    def add_crop_checkbox(self):
-        """Add crop checkbox to controls layout"""
-        # Create layout for crop controls
-        crop_layout = QHBoxLayout()
-        
-        # Create and setup crop checkbox
-        self.cropCheckbox = QCheckBox("Crop Image")
-        self.allowCrop = False  # Initialize the crop flag
-        self.cropCheckbox.setChecked(self.allowCrop)
-        self.cropCheckbox.stateChanged.connect(self.toggle_crop)
-        
-        # Add checkbox to layout
-        crop_layout.addWidget(self.cropCheckbox)
-        
-        # Get the controls layout
-        layout = self.layout()
-        controlsLayout = layout.itemAt(2).layout()  # Get the controls layout
-        
-        # Add the crop layout to controls
-        controlsLayout.insertLayout(2, crop_layout)
-
     def toggle_crop(self, state):
         """Toggle crop functionality"""
         self.allowCrop = bool(state)
+
+    def seek_relative(self, ms):
+        """
+        Seek relative to current position by specified milliseconds.
+        
+        Args:
+            ms (int): Milliseconds to seek (positive or negative)
+        """
+        current = self.mediaPlayer.position()
+        new_pos = max(0, min(current + ms, self.mediaPlayer.duration()))
+        self.mediaPlayer.setPosition(new_pos)
+
+    def seek_frames(self, frames):
+        """
+        Seek by specified number of frames forward or backward.
+        
+        Args:
+            frames (int): Number of frames to seek (positive or negative)
+        """
+        if not self.cap:
+            return
+        
+        # Get current frame rate
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0:
+            return
+        
+        # Calculate milliseconds per frame
+        ms_per_frame = int(1000 / fps)
+        
+        # Seek by calculated milliseconds
+        self.seek_relative(frames * ms_per_frame)
+
+    def keyPressEvent(self, event):
+        """
+        Handle keyboard shortcuts for frame navigation.
+        
+        Left/Right arrows for frame-by-frame
+        Shift + Left/Right for second jumps
+        Ctrl + Left/Right for minute jumps
+        """
+        if event.key() == Qt.Key_Left:
+            if event.modifiers() & Qt.ControlModifier:
+                self.seek_relative(-60000)  # Back 1 minute
+            elif event.modifiers() & Qt.ShiftModifier:
+                self.seek_relative(-1000)   # Back 1 second
+            else:
+                self.seek_frames(-1)        # Back 1 frame
+        elif event.key() == Qt.Key_Right:
+            if event.modifiers() & Qt.ControlModifier:
+                self.seek_relative(60000)   # Forward 1 minute
+            elif event.modifiers() & Qt.ShiftModifier:
+                self.seek_relative(1000)    # Forward 1 second
+            else:
+                self.seek_frames(1)         # Forward 1 frame
+        else:
+            super().keyPressEvent(event)
+
+    def handle_upscale_finished(self, result, processing_path, method, scale, progress_dialog):
+        """
+        Handle the completion of the upscaling process.
+        
+        Args:
+            result: The upscaled image
+            processing_path (str): Path of the input image
+            method (str): Upscaling method used
+            scale (int): Upscaling factor
+            progress_dialog (QProgressDialog): Progress dialog to close
+        """
+        try:
+            # Close progress dialog
+            progress_dialog.close()
+            
+            if result is None:
+                raise Exception("Upscaling failed: No output received")
+            
+            # Generate output filename
+            base_path = os.path.splitext(processing_path)[0]
+            output_path = f"{base_path}_{method}_{scale}x.png"
+            
+            # Save the upscaled image
+            cv2.imwrite(output_path, result)
+            
+            # Show success message
+            QMessageBox.information(
+                self,
+                "Success",
+                f"Upscaled image saved:\n{output_path}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save upscaled image: {str(e)}"
+            )
+
+    def handle_upscale_error(self, error_message, progress_dialog):
+        """
+        Handle errors that occur during upscaling.
+        
+        Args:
+            error_message (str): The error message
+            progress_dialog (QProgressDialog): Progress dialog to close
+        """
+        # Close progress dialog
+        progress_dialog.close()
+        
+        # Show error message
+        QMessageBox.critical(
+            self,
+            "Upscaling Error",
+            f"An error occurred during upscaling:\n{error_message}"
+        )

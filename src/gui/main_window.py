@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QFileSystemModel,
     QPushButton,
     QVBoxLayout,
+    QLabel
 )
 from .video_player import VideoPlayer
 from .download_dialog import DownloadDialog
@@ -24,6 +25,17 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QHBoxLayout(central_widget)
+
+        # Create video player widget
+        self.video_player = VideoPlayer()
+
+        # Set the output folder directly
+        output_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'output'
+        )
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        self.video_player.outputFolder = output_dir
 
         # Create a container widget for file browser and download button
         file_browser_container = QWidget()
@@ -45,21 +57,9 @@ class MainWindow(QMainWindow):
         upscale_button.clicked.connect(self.show_upscale_dialog)
         file_browser_layout.addWidget(upscale_button)
         
-        # Create video player widget
-        self.video_player = VideoPlayer()
-
-        # Add crop checkbox to the video player's control layout
-        self.video_player.add_crop_checkbox()
-        
-        # Set the output folder directly
-        output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'output')
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-        self.video_player.outputFolder = output_dir
-
         # Add widgets to main layout
         main_layout.addWidget(file_browser_container, 1)  # Smaller width for file browser
-        main_layout.addWidget(self.video_player, 4)  # Larger width for video player
+        main_layout.addWidget(self.video_player, 4)        # Larger width for video player
 
         # Set up the menu bar
         self.setup_menu_bar()
@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
     def setup_file_browser(self):
         # Create file system model
         self.file_model = QFileSystemModel()
-        self.file_model.setRootPath(self.get_data_directory())
+        self.file_model.setRootPath(self.video_player.get_data_directory())
 
         # Set filters to show only video files
         self.file_model.setNameFilters(["*.mp4", "*.avi", "*.mkv", "*.mov"])
@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
         # Create tree view
         self.file_browser = QTreeView()
         self.file_browser.setModel(self.file_model)
-        self.file_browser.setRootIndex(self.file_model.index(self.get_data_directory()))
+        self.file_browser.setRootIndex(self.file_model.index(self.video_player.get_data_directory()))
 
         # Hide unnecessary columns
         self.file_browser.setColumnHidden(1, True)  # Size
@@ -85,17 +85,6 @@ class MainWindow(QMainWindow):
 
         # Connect double-click signal
         self.file_browser.doubleClicked.connect(self.on_file_double_clicked)
-
-    def get_data_directory(self):
-        # Get the absolute path to the data directory
-        current_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        data_dir = os.path.join(current_dir, 'data')
-
-        # Create the data directory if it doesn't exist
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
-
-        return data_dir
 
     def on_file_double_clicked(self, index):
         # Get the full path of the selected file
@@ -131,7 +120,7 @@ class MainWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open Video",
-            self.get_data_directory(),
+            self.video_player.get_data_directory(),
             "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)"
         )
         if file_path:
