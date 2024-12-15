@@ -402,8 +402,7 @@ class VideoPlayer(QWidget):
 
         # Add additional options (Upscale and Crop)
         if self.ai_capable:
-            self.add_upscale_controls(mainLayout)
-        self.add_crop_controls(mainLayout)
+            self.add_upscale_and_crop_controls(mainLayout)
 
         self.setLayout(mainLayout)
 
@@ -462,39 +461,62 @@ class VideoPlayer(QWidget):
         """Set up the playback control buttons in sequence."""
         controlsLayout = QHBoxLayout()
 
-        # Navigation buttons with icons or text
-        self.backMinButton = QPushButton("◀◀ 1m")
-        self.backSecButton = QPushButton("◀ 1s")
-        self.backFrameButton = QPushButton("◀ 1f")
-        self.playButton = QPushButton("Play")
-        self.stopButton = QPushButton("Stop")
-        self.forwardFrameButton = QPushButton("1f ▶")
-        self.forwardSecButton = QPushButton("1s ▶")
-        self.forwardMinButton = QPushButton("1m ▶▶")
+        # Navigation buttons with standard icons and tooltips
+        self.back30SecondsButton = QPushButton("⏮")
+        self.back30SecondsButton.setFixedSize(100, 36)
+        self.back30SecondsButton.setToolTip("Jump back 30 seconds")
+
+        self.back10SecondsButton = QPushButton("⏪")
+        self.back10SecondsButton.setFixedSize(100, 36)
+        self.back10SecondsButton.setToolTip("Jump back 10 seconds")
+
+        self.backFrameButton = QPushButton("↶")
+        self.backFrameButton.setFixedSize(100, 36)
+        self.backFrameButton.setToolTip("Previous frame")
+
+        self.playButton = QPushButton("▶")
+        self.playButton.setFixedSize(100, 36)
+        self.playButton.setToolTip("Play/Pause")
+
+        self.stopButton = QPushButton("⏹")
+        self.stopButton.setFixedSize(100, 36)
+        self.stopButton.setToolTip("Stop")
+
+        self.forwardFrameButton = QPushButton("↷")
+        self.forwardFrameButton.setFixedSize(100, 36)
+        self.forwardFrameButton.setToolTip("Next frame")
+
+        self.forward10SecondsButton = QPushButton("⏩")
+        self.forward10SecondsButton.setFixedSize(100, 36)
+        self.forward10SecondsButton.setToolTip("Jump forward 10 seconds")
+
+        self.forward30SecondsButton = QPushButton("⏭")
+        self.forward30SecondsButton.setFixedSize(100, 36)
+        self.forward30SecondsButton.setToolTip("Jump forward 30 seconds")
 
         # Connect button signals
-        self.backMinButton.clicked.connect(
-            lambda: self.seek_relative(-60000))  # -1 min
-        self.backSecButton.clicked.connect(
-            lambda: self.seek_relative(-1000))   # -1 sec
+        self.back30SecondsButton.clicked.connect(
+            lambda: self.seek_relative(-30000))  # -30 sec
+        self.back10SecondsButton.clicked.connect(
+            lambda: self.seek_relative(-10000))   # -10 sec
         self.backFrameButton.clicked.connect(lambda: self.seek_frames(-1))
         self.playButton.clicked.connect(self.toggle_playback)
         self.stopButton.clicked.connect(self.stop_video)
         self.forwardFrameButton.clicked.connect(lambda: self.seek_frames(1))
-        self.forwardSecButton.clicked.connect(
-            lambda: self.seek_relative(1000))    # +1 sec
-        self.forwardMinButton.clicked.connect(
-            lambda: self.seek_relative(60000))   # +1 min
+        self.forward10SecondsButton.clicked.connect(
+            lambda: self.seek_relative(10000))    # +10 sec
+        self.forward30SecondsButton.clicked.connect(
+            lambda: self.seek_relative(30000))   # +30 sec
 
         # Add buttons to layout in the desired sequence
-        controlsLayout.addWidget(self.backMinButton)
-        controlsLayout.addWidget(self.backSecButton)
+        controlsLayout.addWidget(self.back30SecondsButton)
+        controlsLayout.addWidget(self.back10SecondsButton)
         controlsLayout.addWidget(self.backFrameButton)
         controlsLayout.addWidget(self.playButton)
         controlsLayout.addWidget(self.stopButton)
         controlsLayout.addWidget(self.forwardFrameButton)
-        controlsLayout.addWidget(self.forwardSecButton)
-        controlsLayout.addWidget(self.forwardMinButton)
+        controlsLayout.addWidget(self.forward10SecondsButton)
+        controlsLayout.addWidget(self.forward30SecondsButton)
 
         # Volume Control
         self.volumeSlider = QSlider(Qt.Horizontal)
@@ -507,18 +529,15 @@ class VideoPlayer(QWidget):
 
         parent_layout.addLayout(controlsLayout)
 
-    def add_upscale_controls(self, parent_layout):
-        """Add upscale options to the layout."""
-        upscale_layout = QHBoxLayout()
+    def add_upscale_and_crop_controls(self, parent_layout):
+        """Add upscale and crop controls in the same line."""
+        controls_layout = QHBoxLayout()
 
-        # Add upscale label
+        # Add upscale label and combo
         upscale_label = QLabel("Upscale:")
-        upscale_layout.addWidget(upscale_label)
+        controls_layout.addWidget(upscale_label)
 
-        # Create combo box
         self.upscale_combo = QComboBox()
-
-        # Add all options
         options = [
             "No Upscaling",
             "Bicubic (2x)",
@@ -533,54 +552,36 @@ class VideoPlayer(QWidget):
             "SwinIR (4x)",
         ]
         self.upscale_combo.addItems(options)
-        upscale_layout.addWidget(self.upscale_combo)
+        controls_layout.addWidget(self.upscale_combo)
 
         # Add performance warning label
         self.performance_label = QLabel()
         self.performance_label.setStyleSheet("""
             QLabel {
-                color: #FF8C00;  /* Dark Orange */
+                color: #FF8C00;
                 font-weight: bold;
                 padding: 2px 5px;
                 border-radius: 3px;
                 background-color: rgba(255, 140, 0, 0.1);
             }
         """)
-        upscale_layout.addWidget(self.performance_label)
-        self.performance_label.hide()  # Initially hidden
+        controls_layout.addWidget(self.performance_label)
+        self.performance_label.hide()
 
-        # Connect combo box change event
-        self.upscale_combo.currentTextChanged.connect(
-            lambda text: self.on_upscale_option_changed(text, self.ai_capable)
-        )
+        # Add some spacing
+        controls_layout.addSpacing(20)
 
-        parent_layout.addLayout(upscale_layout)
-
-    def add_crop_controls(self, parent_layout):
-        """Add crop checkbox to the layout."""
-        crop_layout = QHBoxLayout()
-
-        # Create and setup crop checkbox
+        # Add crop checkbox
         self.cropCheckbox = QCheckBox("Crop Image")
-        self.allowCrop = False  # Initialize the crop flag
+        self.allowCrop = False
         self.cropCheckbox.setChecked(self.allowCrop)
         self.cropCheckbox.stateChanged.connect(self.toggle_crop)
+        controls_layout.addWidget(self.cropCheckbox)
 
-        # Add checkbox to layout
-        crop_layout.addWidget(self.cropCheckbox)
+        # Add stretch to push everything to the left
+        controls_layout.addStretch()
 
-        parent_layout.addLayout(crop_layout)
-
-    def on_upscale_option_changed(self, text, has_gpu):
-        """Handle upscale option changes and update performance warning."""
-        if "Real-ESRGAN" in text:
-            if not has_gpu:
-                self.performance_label.setText("⚠️ CPU Mode (Slow)")
-                self.performance_label.show()
-            else:
-                self.performance_label.hide()
-        else:
-            self.performance_label.hide()
+        parent_layout.addLayout(controls_layout)
 
     def load_video(self, file_path):
         """
