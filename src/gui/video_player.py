@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
+from PyQt5.QtGui import QIcon
 from .crop_dialog import CropDialog
 
 import torch
@@ -337,6 +338,7 @@ class VideoPlayer(QWidget):
 
         # Set up the video player
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
+        self.mediaPlayer.setNotifyInterval(250)
         self.videoWidget = QVideoWidget()
 
         # Initialize OpenCV VideoCapture
@@ -349,7 +351,7 @@ class VideoPlayer(QWidget):
         # Set up the media player
         self.mediaPlayer.setVideoOutput(self.videoWidget)
 
-        # Add a slider for video seeking with custom style for macOS
+        # Create the position slider
         self.positionSlider = QSlider(Qt.Horizontal)
         self.positionSlider.setRange(0, 0)
         self.positionSlider.sliderMoved.connect(self.set_position)
@@ -372,35 +374,10 @@ class VideoPlayer(QWidget):
                 }
             """)
 
-        # Add time labels
-        self.currentTimeLabel = QLabel("00:00")
-        self.totalTimeLabel = QLabel("00:00")
-
-        # Adjust the layout for slider and labels
-        sliderLayout = QHBoxLayout()
-        sliderLayout.setContentsMargins(0, 0, 0, 0)  # Remove margins
-        sliderLayout.setSpacing(5)  # Reduce spacing between widgets
-
-        # Set fixed height for labels and slider to minimize height usage
-        self.currentTimeLabel.setFixedHeight(20)
-        self.totalTimeLabel.setFixedHeight(20)
-        self.positionSlider.setFixedHeight(20)
-
-        sliderLayout.addWidget(self.currentTimeLabel)
-        sliderLayout.addWidget(self.positionSlider)
-        sliderLayout.addWidget(self.totalTimeLabel)
-
-        # Add screenshot button
-        self.screenshotButton = QPushButton("Screenshot")
-        self.screenshotButton.clicked.connect(self.take_screenshot)
-        sliderLayout.addWidget(self.screenshotButton)
-
-        mainLayout.addLayout(sliderLayout)
-
-        # Add playback controls
+        # Add playback controls and volume
         self.setup_playback_controls(mainLayout)
 
-        # Add additional options (Upscale and Crop)
+        # Add additional options (Upscale, Crop, and Volume) in the same row
         if self.ai_capable:
             self.add_upscale_and_crop_controls(mainLayout)
 
@@ -459,7 +436,25 @@ class VideoPlayer(QWidget):
 
     def setup_playback_controls(self, parent_layout):
         """Set up the playback control buttons in sequence."""
+        # First row - slider only
+        sliderLayout = QHBoxLayout()
+        sliderLayout.setContentsMargins(0, 0, 0, 0)
+        sliderLayout.setSpacing(5)
+
+        self.currentTimeLabel = QLabel("00:00:00:00")
+        self.totalTimeLabel = QLabel("00:00:00:00")
+        self.currentTimeLabel.setFixedHeight(20)
+        self.totalTimeLabel.setFixedHeight(20)
+        self.positionSlider.setFixedHeight(20)
+
+        sliderLayout.addWidget(self.currentTimeLabel)
+        sliderLayout.addWidget(self.positionSlider)
+        sliderLayout.addWidget(self.totalTimeLabel)
+        parent_layout.addLayout(sliderLayout)
+
+        # Second row - playback controls and screenshot
         controlsLayout = QHBoxLayout()
+        controlsLayout.setContentsMargins(0, 0, 0, 0)
 
         # Navigation buttons with standard icons and tooltips
         self.back30SecondsButton = QPushButton("⏮")
@@ -494,19 +489,31 @@ class VideoPlayer(QWidget):
         self.forward30SecondsButton.setFixedSize(100, 36)
         self.forward30SecondsButton.setToolTip("Jump forward 30 seconds")
 
+        # Screenshot button
+        self.screenshotButton = QPushButton(
+            " Screenshot")  # Added space before text
+        self.screenshotButton.setFixedSize(120, 36)
+        self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")
+        self.screenshotButton.setShortcut("Ctrl+S")
+        # https://specifications.freedesktop.org/icon-naming-spec/latest/
+        self.screenshotButton.setIcon(QIcon.fromTheme("camera-photo"))
+        self.screenshotButton.setStyleSheet(
+            "QPushButton { background-color: #678dc6; padding-left: 5px; } QPushButton QToolTip { background-color: none; }")
+        self.screenshotButton.clicked.connect(self.take_screenshot)
+
         # Connect button signals
         self.back30SecondsButton.clicked.connect(
-            lambda: self.seek_relative(-30000))  # -30 sec
+            lambda: self.seek_relative(-30000))
         self.back10SecondsButton.clicked.connect(
-            lambda: self.seek_relative(-10000))   # -10 sec
+            lambda: self.seek_relative(-10000))
         self.backFrameButton.clicked.connect(lambda: self.seek_frames(-1))
         self.playButton.clicked.connect(self.toggle_playback)
         self.stopButton.clicked.connect(self.stop_video)
         self.forwardFrameButton.clicked.connect(lambda: self.seek_frames(1))
         self.forward10SecondsButton.clicked.connect(
-            lambda: self.seek_relative(10000))    # +10 sec
+            lambda: self.seek_relative(10000))
         self.forward30SecondsButton.clicked.connect(
-            lambda: self.seek_relative(30000))   # +30 sec
+            lambda: self.seek_relative(30000))
 
         # Add buttons to layout in the desired sequence
         controlsLayout.addWidget(self.back30SecondsButton)
@@ -517,20 +524,12 @@ class VideoPlayer(QWidget):
         controlsLayout.addWidget(self.forwardFrameButton)
         controlsLayout.addWidget(self.forward10SecondsButton)
         controlsLayout.addWidget(self.forward30SecondsButton)
-
-        # Volume Control
-        self.volumeSlider = QSlider(Qt.Horizontal)
-        self.volumeSlider.setRange(0, 100)
-        self.volumeSlider.setValue(50)  # Default volume
-        self.volumeSlider.setFixedWidth(100)
-        self.volumeSlider.valueChanged.connect(self.mediaPlayer.setVolume)
-        controlsLayout.addWidget(QLabel("Volume"))
-        controlsLayout.addWidget(self.volumeSlider)
+        controlsLayout.addWidget(self.screenshotButton)
 
         parent_layout.addLayout(controlsLayout)
 
     def add_upscale_and_crop_controls(self, parent_layout):
-        """Add upscale and crop controls in the same line."""
+        """Add upscale, crop controls, and volume in the same line."""
         controls_layout = QHBoxLayout()
 
         # Add upscale label and combo
@@ -577,6 +576,21 @@ class VideoPlayer(QWidget):
         self.cropCheckbox.setChecked(self.allowCrop)
         self.cropCheckbox.stateChanged.connect(self.toggle_crop)
         controls_layout.addWidget(self.cropCheckbox)
+
+        # Add spacing before volume control
+        controls_layout.addSpacing(20)
+
+        # Add volume control
+        volumeLabel = QLabel("Volume")
+        controls_layout.addWidget(volumeLabel)
+
+        self.volumeSlider = QSlider(Qt.Horizontal)
+        self.volumeSlider.setRange(0, 100)
+        self.volumeSlider.setValue(50)  # Default volume
+        # Set fixed width for the volume slider
+        self.volumeSlider.setFixedWidth(100)
+        self.volumeSlider.valueChanged.connect(self.mediaPlayer.setVolume)
+        controls_layout.addWidget(self.volumeSlider)
 
         # Add stretch to push everything to the left
         controls_layout.addStretch()
@@ -634,11 +648,12 @@ class VideoPlayer(QWidget):
             self.playButton.setText("Play")
 
     def ms_to_time(self, ms):
-        """Convert milliseconds to mm:ss format."""
-        seconds = ms // 1000
-        minutes = seconds // 60
-        seconds = seconds % 60
-        return f"{int(minutes):02}:{int(seconds):02}"
+        """Convert milliseconds to hh:mm:ss:ms format."""
+        hours = ms // 3600000
+        minutes = (ms % 3600000) // 60000
+        seconds = (ms % 60000) // 1000
+        milliseconds = (ms % 1000) // 10
+        return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}:{int(milliseconds):02}"
 
     def set_playback_speed(self, value):
         """Set the playback speed."""
