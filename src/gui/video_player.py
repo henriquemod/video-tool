@@ -8,12 +8,26 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal, QSize
+from PyQt5.QtGui import QIcon, QColor, QPainter
 from .crop_dialog import CropDialog
 
 import torch
 import numpy as np
+
+
+def generateIcon(icon_name, fromTheme=False):
+    icon = QIcon.fromTheme(icon_name)
+    if fromTheme:
+        return icon
+    else:
+        pixmap = icon.pixmap(QSize(32, 32))  # Get pixmap of appropriate size
+        # Create painter to modify the pixmap
+        painter = QPainter(pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        painter.fillRect(pixmap.rect(), QColor(0, 0, 0))  # Fill with black
+        painter.end()
+        return QIcon(pixmap)
 
 
 # Model URLs for SwinIR and Real-ESRGAN
@@ -457,37 +471,51 @@ class VideoPlayer(QWidget):
         controlsLayout.setContentsMargins(0, 0, 0, 0)
 
         # Navigation buttons with standard icons and tooltips
-        self.back30SecondsButton = QPushButton("⏮")
+        self.back30SecondsButton = QPushButton(" x2")
         self.back30SecondsButton.setFixedSize(100, 36)
         self.back30SecondsButton.setToolTip("Jump back 30 seconds")
+        self.back30SecondsButton.setIcon(
+            generateIcon("media-seek-backward"))
 
-        self.back10SecondsButton = QPushButton("⏪")
-        self.back10SecondsButton.setFixedSize(100, 36)
-        self.back10SecondsButton.setToolTip("Jump back 10 seconds")
+        self.back15SecondsButton = QPushButton()
+        self.back15SecondsButton.setFixedSize(100, 36)
+        self.back15SecondsButton.setToolTip("Jump back 15 seconds")
+        self.back15SecondsButton.setIcon(
+            generateIcon("media-seek-backward"))
 
-        self.backFrameButton = QPushButton("↶")
+        self.backFrameButton = QPushButton("-")
         self.backFrameButton.setFixedSize(100, 36)
         self.backFrameButton.setToolTip("Previous frame")
+        self.backFrameButton.setStyleSheet(
+            "QPushButton { font-weight: bold; } ")
 
-        self.playButton = QPushButton("▶")
+        self.playButton = QPushButton()
         self.playButton.setFixedSize(100, 36)
         self.playButton.setToolTip("Play/Pause")
+        self.playButton.setIcon(generateIcon("media-playback-start"))
 
-        self.stopButton = QPushButton("⏹")
+        self.stopButton = QPushButton()
         self.stopButton.setFixedSize(100, 36)
         self.stopButton.setToolTip("Stop")
+        self.stopButton.setIcon(generateIcon("media-playback-stop"))
 
-        self.forwardFrameButton = QPushButton("↷")
+        self.forwardFrameButton = QPushButton("+")
         self.forwardFrameButton.setFixedSize(100, 36)
         self.forwardFrameButton.setToolTip("Next frame")
+        self.forwardFrameButton.setStyleSheet(
+            "QPushButton { font-weight: bold; } ")
 
-        self.forward10SecondsButton = QPushButton("⏩")
-        self.forward10SecondsButton.setFixedSize(100, 36)
-        self.forward10SecondsButton.setToolTip("Jump forward 10 seconds")
+        self.forward15SecondsButton = QPushButton()
+        self.forward15SecondsButton.setFixedSize(100, 36)
+        self.forward15SecondsButton.setToolTip("Jump forward 15 seconds")
+        self.forward15SecondsButton.setIcon(
+            generateIcon("media-seek-forward"))
 
-        self.forward30SecondsButton = QPushButton("⏭")
+        self.forward30SecondsButton = QPushButton(" x2")
         self.forward30SecondsButton.setFixedSize(100, 36)
         self.forward30SecondsButton.setToolTip("Jump forward 30 seconds")
+        self.forward30SecondsButton.setIcon(
+            generateIcon("media-seek-forward"))
 
         # Screenshot button
         self.screenshotButton = QPushButton(
@@ -496,7 +524,7 @@ class VideoPlayer(QWidget):
         self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")
         self.screenshotButton.setShortcut("Ctrl+S")
         # https://specifications.freedesktop.org/icon-naming-spec/latest/
-        self.screenshotButton.setIcon(QIcon.fromTheme("camera-photo"))
+        self.screenshotButton.setIcon(generateIcon("camera-photo", True))
         self.screenshotButton.setStyleSheet(
             "QPushButton { background-color: #678dc6; padding-left: 5px; } QPushButton QToolTip { background-color: none; }")
         self.screenshotButton.clicked.connect(self.take_screenshot)
@@ -504,25 +532,25 @@ class VideoPlayer(QWidget):
         # Connect button signals
         self.back30SecondsButton.clicked.connect(
             lambda: self.seek_relative(-30000))
-        self.back10SecondsButton.clicked.connect(
-            lambda: self.seek_relative(-10000))
+        self.back15SecondsButton.clicked.connect(
+            lambda: self.seek_relative(-15000))
         self.backFrameButton.clicked.connect(lambda: self.seek_frames(-1))
         self.playButton.clicked.connect(self.toggle_playback)
         self.stopButton.clicked.connect(self.stop_video)
         self.forwardFrameButton.clicked.connect(lambda: self.seek_frames(1))
-        self.forward10SecondsButton.clicked.connect(
-            lambda: self.seek_relative(10000))
+        self.forward15SecondsButton.clicked.connect(
+            lambda: self.seek_relative(15000))
         self.forward30SecondsButton.clicked.connect(
             lambda: self.seek_relative(30000))
 
         # Add buttons to layout in the desired sequence
         controlsLayout.addWidget(self.back30SecondsButton)
-        controlsLayout.addWidget(self.back10SecondsButton)
+        controlsLayout.addWidget(self.back15SecondsButton)
         controlsLayout.addWidget(self.backFrameButton)
         controlsLayout.addWidget(self.playButton)
         controlsLayout.addWidget(self.stopButton)
         controlsLayout.addWidget(self.forwardFrameButton)
-        controlsLayout.addWidget(self.forward10SecondsButton)
+        controlsLayout.addWidget(self.forward15SecondsButton)
         controlsLayout.addWidget(self.forward30SecondsButton)
         controlsLayout.addWidget(self.screenshotButton)
 
@@ -612,21 +640,24 @@ class VideoPlayer(QWidget):
         else:
             # Start playback automatically
             self.mediaPlayer.play()
-            self.playButton.setText("Pause")
+            self.playButton.setIcon(generateIcon("media-playback-pause"))
 
     def toggle_playback(self):
         """Toggle between play and pause."""
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
             self.mediaPlayer.pause()
-            self.playButton.setText("Play")
+            # self.playButton.setText("Play")
+            self.playButton.setIcon(generateIcon("media-playback-start"))
         else:
             self.mediaPlayer.play()
-            self.playButton.setText("Pause")
+            # self.playButton.setText("Pause")
+            self.playButton.setIcon(generateIcon("media-playback-pause"))
 
     def stop_video(self):
         """Stop video playback."""
         self.mediaPlayer.stop()
-        self.playButton.setText("Play")
+        # self.playButton.setText("Play")
+        self.playButton.setIcon(generateIcon("media-playback-start"))
 
     def set_position(self, position):
         """Set the media player position."""
@@ -645,7 +676,7 @@ class VideoPlayer(QWidget):
     def media_state_changed(self, state):
         """Handle media state changes."""
         if state == QMediaPlayer.StoppedState:
-            self.playButton.setText("Play")
+            self.playButton.setIcon(generateIcon("media-playback-start"))
 
     def ms_to_time(self, ms):
         """Convert milliseconds to hh:mm:ss:ms format."""
