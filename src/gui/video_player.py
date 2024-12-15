@@ -549,12 +549,9 @@ class VideoPlayer(QWidget):
         upscale_layout.addWidget(self.performance_label)
         self.performance_label.hide()  # Initially hidden
 
-        # Check AI capabilities and update UI
-        has_gpu = self.check_ai_capabilities()
-
         # Connect combo box change event
         self.upscale_combo.currentTextChanged.connect(
-            lambda text: self.on_upscale_option_changed(text, has_gpu)
+            lambda text: self.on_upscale_option_changed(text, self.ai_capable)
         )
 
         parent_layout.addLayout(upscale_layout)
