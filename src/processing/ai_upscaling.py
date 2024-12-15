@@ -289,6 +289,8 @@ class AIUpscaler:
             # Determine which model to use based on scale and current method
             if "anime" in self.current_method.lower():
                 model_key = 'Real-ESRGAN-4x-anime'
+                num_feat = 64
+                num_block = 6  # Anime model uses 6 blocks instead of 23
             elif "esrnet" in self.current_method.lower():
                 model_key = 'Real-ESRNet-4x-plus'
             elif "general" in self.current_method.lower():
