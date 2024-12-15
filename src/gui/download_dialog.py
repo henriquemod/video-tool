@@ -1,8 +1,8 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
-    QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem
+    QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem, QFileDialog
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QStandardPaths
 import os
 import yt_dlp
 
@@ -21,10 +21,10 @@ class DownloadThread(QThread):
     video_progress = pyqtSignal(int, int)  # current video, total videos
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, videos, data_dir):
+    def __init__(self, videos, output_dir):
         super().__init__()
         self.videos = videos
-        self.data_dir = data_dir
+        self.output_dir = output_dir
         self.current_video = 0
 
     def progress_hook(self, d):
@@ -41,7 +41,7 @@ class DownloadThread(QThread):
 
                 ydl_opts = {
                     'format': 'bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-                    'outtmpl': os.path.join(self.data_dir, '%(title)s.%(ext)s'),
+                    'outtmpl': os.path.join(self.output_dir, '%(title)s.%(ext)s'),
                     'progress_hooks': [self.progress_hook],
                     'merge_output_format': 'mp4',
                     'postprocessor_args': [
@@ -275,10 +275,18 @@ class DownloadDialog(QDialog):
                 self, "Error", "Please add at least one video to download")
             return
 
-        data_dir = os.path.join(os.path.dirname(
-            os.path.dirname(os.path.dirname(__file__))), 'data')
+        # Ask user for save location
+        output_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Download Location",
+            QStandardPaths.writableLocation(QStandardPaths.MoviesLocation),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
 
-        # Show progress bar and disable download button
+        if not output_dir:  # User cancelled
+            return
+
+        # Show progress bar and disable buttons
         self.progress_bar.show()
         self.progress_label.show()
         self.progress_bar.setValue(0)
@@ -286,8 +294,8 @@ class DownloadDialog(QDialog):
         self.add_button.setEnabled(False)
         self.remove_button.setEnabled(False)
 
-        # Create and configure download thread
-        self.download_thread = DownloadThread(self.videos, data_dir)
+        # Create and start download thread with user-selected directory
+        self.download_thread = DownloadThread(self.videos, output_dir)
         self.download_thread.progress.connect(self.progress_bar.setValue)
         self.download_thread.video_progress.connect(self.update_progress_label)
         self.download_thread.finished.connect(self.download_finished)

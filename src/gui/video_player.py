@@ -1,6 +1,7 @@
 import cv2
 import sys
 import os
+from PyQt5.QtCore import QStandardPaths
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
     QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox, QComboBox,
@@ -480,19 +481,7 @@ class VideoPlayer(QWidget):
             self.fullscreenButton.setText("Exit Fullscreen")
 
     def take_screenshot(self):
-        """
-        Captures the current frame as a high-quality screenshot.
-
-        Features:
-        - Captures frame at original video resolution
-        - Saves with timestamp-based filename
-        - Optional cropping through CropDialog
-        - Configurable output directory
-
-        @anchor #screenshot-functionality
-        @see @Project#Screenshot Capability
-        """
-
+        """Captures the current frame as a high-quality screenshot."""
         # Get the current position of the video
         current_position = self.mediaPlayer.position()
 
@@ -506,12 +495,20 @@ class VideoPlayer(QWidget):
                 self, "Error", "Failed to capture frame from video.")
             return
 
-        # Generate filename with timestamp
-        filename = f"screenshot_{current_position}.png"
+        # Generate default filename with timestamp
+        default_filename = f"screenshot_{current_position}.png"
 
-        # Use outputFolder if defined, otherwise use root project path
-        save_path = os.path.join(getattr(
-            self, 'outputFolder', os.path.dirname(os.path.abspath(__file__))), filename)
+        # Ask user where to save the screenshot
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Screenshot",
+            os.path.join(QStandardPaths.writableLocation(
+                QStandardPaths.PicturesLocation), default_filename),
+            "PNG Images (*.png);;All Files (*)"
+        )
+
+        if not save_path:  # User cancelled
+            return
 
         # Save the original screenshot
         cv2.imwrite(save_path, frame)

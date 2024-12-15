@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton,
                              QLabel, QRubberBand, QMessageBox,
-                             QComboBox, QHBoxLayout)
-from PyQt5.QtCore import Qt, QRect, QPoint, QSize
+                             QComboBox, QHBoxLayout, QFileDialog)
+from PyQt5.QtCore import Qt, QRect, QPoint, QSize, QStandardPaths
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor
 import os
 
@@ -369,9 +369,20 @@ class CropDialog(QDialog):
             # Crop the original image
             cropped_pixmap = self.pixmap.copy(scaled_rect)
 
-            # Generate cropped image filename
-            base_path, ext = os.path.splitext(self.image_path)
-            self.cropped_path = f"{base_path}_cropped{ext}"
+            # Generate default filename
+            default_name = f"{os.path.splitext(os.path.basename(self.image_path))[0]}_cropped.png"
+
+            # Ask user where to save the cropped image
+            self.cropped_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Cropped Image",
+                os.path.join(QStandardPaths.writableLocation(
+                    QStandardPaths.PicturesLocation), default_name),
+                "PNG Images (*.png);;JPEG Images (*.jpg *.jpeg);;All Files (*)"
+            )
+
+            if not self.cropped_path:  # User cancelled
+                return
 
             # Save the cropped image
             if cropped_pixmap.save(self.cropped_path):

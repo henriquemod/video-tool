@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
     QFileDialog, QProgressDialog
 )
+from PyQt5.QtCore import QStandardPaths
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import os
 import cv2
@@ -314,14 +315,16 @@ class UpscaleDialog(QDialog):
                 self, "Error", "Please add at least one image to upscale")
             return
 
-        # Get selected model
-        selected_model = get_available_models(
-        )[self.method_combo.currentIndex()]
+        # Ask user for save location
+        output_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Output Location for Upscaled Images",
+            QStandardPaths.writableLocation(QStandardPaths.PicturesLocation),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
 
-        output_dir = os.path.join(os.path.dirname(
-            os.path.dirname(os.path.dirname(__file__))), 'output')
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        if not output_dir:  # User cancelled
+            return
 
         # Show progress bar and disable buttons
         self.progress_bar.show()
@@ -331,9 +334,12 @@ class UpscaleDialog(QDialog):
         self.remove_button.setEnabled(False)
         self.browse_button.setEnabled(False)
 
-        # Create and configure upscale thread
+        # Create and start upscale thread with user-selected directory
         self.upscale_thread = UpscaleThread(
-            self.images, output_dir, selected_model.id)
+            self.images,
+            output_dir,
+            get_available_models()[self.method_combo.currentIndex()].id
+        )
         self.upscale_thread.progress.connect(self.progress_bar.setValue)
         self.upscale_thread.image_progress.connect(self.update_progress_label)
         self.upscale_thread.finished.connect(self.upscale_finished)

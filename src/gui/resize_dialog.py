@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
     QFileDialog, QProgressDialog, QCheckBox, QSpinBox
 )
+from PyQt5.QtCore import QStandardPaths
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import os
 import cv2
@@ -267,10 +268,16 @@ class ResizeDialog(QDialog):
                 self, "Error", "Please add at least one image to resize")
             return
 
-        output_dir = os.path.join(os.path.dirname(
-            os.path.dirname(os.path.dirname(__file__))), 'output')
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        # Ask user for save location
+        output_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Select Output Location for Resized Images",
+            QStandardPaths.writableLocation(QStandardPaths.PicturesLocation),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+
+        if not output_dir:  # User cancelled
+            return
 
         # Show progress bar and disable buttons
         self.progress_bar.show()
@@ -280,7 +287,7 @@ class ResizeDialog(QDialog):
         self.remove_button.setEnabled(False)
         self.browse_button.setEnabled(False)
 
-        # Create and start resize thread
+        # Create and start resize thread with user-selected directory
         self.resize_thread = ResizeThread(
             self.images,
             output_dir,
