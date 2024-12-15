@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QVBoxLayout,
 )
+from PyQt5.QtCore import QStandardPaths
 from .video_player import VideoPlayer
 from .download_dialog import DownloadDialog
 from .upscale_dialog import UpscaleDialog
@@ -122,7 +123,12 @@ class MainWindow(QMainWindow):
         # Add file browser
         file_browser_layout.addWidget(self.file_browser)
 
-        # Create and add download button
+        # Add Load from folder button
+        load_folder_button = QPushButton("Load from folder")
+        load_folder_button.clicked.connect(self.change_browser_folder)
+        file_browser_layout.addWidget(load_folder_button)
+
+        # Add download button
         download_button = QPushButton("Download video")
         download_button.clicked.connect(self.show_download_dialog)
         file_browser_layout.addWidget(download_button)
@@ -149,7 +155,13 @@ class MainWindow(QMainWindow):
     def setup_file_browser(self):
         # Create file system model
         self.file_model = QFileSystemModel()
-        self.file_model.setRootPath(self.video_player.get_data_directory())
+
+        # Get default videos directory for the operating system
+        default_videos_path = QStandardPaths.writableLocation(
+            QStandardPaths.MoviesLocation)
+        self.current_browser_path = default_videos_path
+
+        self.file_model.setRootPath(self.current_browser_path)
 
         # Set filters to show only video files
         self.file_model.setNameFilters(["*.mp4", "*.avi", "*.mkv", "*.mov"])
@@ -158,8 +170,8 @@ class MainWindow(QMainWindow):
         # Create tree view
         self.file_browser = QTreeView()
         self.file_browser.setModel(self.file_model)
-        self.file_browser.setRootIndex(self.file_model.index(
-            self.video_player.get_data_directory()))
+        self.file_browser.setRootIndex(
+            self.file_model.index(self.current_browser_path))
 
         # Hide unnecessary columns
         self.file_browser.setColumnHidden(1, True)  # Size
@@ -223,3 +235,16 @@ class MainWindow(QMainWindow):
         """Show the resize dialog when resize batch button is clicked"""
         dialog = ResizeDialog(self)
         dialog.exec_()
+
+    def change_browser_folder(self):
+        """Allow user to select a new folder to browse"""
+        new_folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Folder",
+            self.current_browser_path,
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+
+        if new_folder:
+            self.current_browser_path = new_folder
+            self.file_browser.setRootIndex(self.file_model.index(new_folder))
