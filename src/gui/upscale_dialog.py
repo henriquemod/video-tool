@@ -77,17 +77,14 @@ class UpscaleDialog(QDialog):
         
         # Path input
         path_layout = QHBoxLayout()
-        path_label = QLabel("Image Path:")
+        path_label = QLabel("Images:")
         self.path_input = QLineEdit()
         self.browse_button = QPushButton("Browse")
+        self.add_button = QPushButton("Add")
         path_layout.addWidget(path_label)
         path_layout.addWidget(self.path_input)
-        path_layout.addWidget(self.browse_button)
-        
-        # Add button
-        self.add_button = QPushButton("Add")
         path_layout.addWidget(self.add_button)
-        
+        path_layout.addWidget(self.browse_button)
         layout.addLayout(path_layout)
         
         # Image list
@@ -147,7 +144,7 @@ class UpscaleDialog(QDialog):
         
         # Connect signals
         self.browse_button.clicked.connect(self.browse_images)
-        self.add_button.clicked.connect(self.add_images)
+        self.add_button.clicked.connect(self.add_image)
         self.remove_button.clicked.connect(self.remove_image)
         self.cancel_button.clicked.connect(self.handle_cancel)
         self.upscale_button.clicked.connect(self.upscale_images)
@@ -160,22 +157,28 @@ class UpscaleDialog(QDialog):
             "Image Files (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
         )
         if file_paths:
-            self.path_input.setText(";".join(file_paths))
-            
-    def add_images(self):
-        paths = self.path_input.text().strip().split(";")
-        for path in paths:
-            if not path:
-                continue
-                
-            if not os.path.isfile(path):
-                QMessageBox.warning(self, "Error", f"File not found: {path}")
-                continue
-                
-            image = ImageItem(path)
-            self.images.append(image)
-            self.image_list.addItem(QListWidgetItem(str(image)))
-            
+            for path in file_paths:
+                if not os.path.isfile(path):
+                    QMessageBox.warning(self, "Error", f"File not found: {path}")
+                    continue
+                    
+                image = ImageItem(path)
+                self.images.append(image)
+                self.image_list.addItem(QListWidgetItem(str(image)))
+        
+    def add_image(self):
+        path = self.path_input.text().strip()
+        if not path:
+            QMessageBox.warning(self, "Error", "Please enter an image path")
+            return
+        
+        if not os.path.isfile(path):
+            QMessageBox.warning(self, "Error", f"File not found: {path}")
+            return
+        
+        image = ImageItem(path)
+        self.images.append(image)
+        self.image_list.addItem(QListWidgetItem(str(image)))
         self.path_input.clear()
         
     def remove_image(self):
@@ -211,7 +214,6 @@ class UpscaleDialog(QDialog):
         self.progress_label.show()
         self.progress_bar.setValue(0)
         self.upscale_button.setEnabled(False)
-        self.add_button.setEnabled(False)
         self.remove_button.setEnabled(False)
         self.browse_button.setEnabled(False)
         
@@ -231,7 +233,6 @@ class UpscaleDialog(QDialog):
         self.progress_bar.hide()
         self.progress_label.hide()
         self.upscale_button.setEnabled(True)
-        self.add_button.setEnabled(True)
         self.remove_button.setEnabled(True)
         self.browse_button.setEnabled(True)
         
