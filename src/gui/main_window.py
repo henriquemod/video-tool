@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from .video_player import VideoPlayer
 from .download_dialog import DownloadDialog
 from .upscale_dialog import UpscaleDialog
+from .resize_dialog import ResizeDialog
 import os
 
 
@@ -131,6 +132,11 @@ class MainWindow(QMainWindow):
         upscale_button.clicked.connect(self.show_upscale_dialog)
         file_browser_layout.addWidget(upscale_button)
 
+        # Add the new resize batch button
+        resize_button = QPushButton("Resize batch")
+        resize_button.clicked.connect(self.show_resize_dialog)
+        file_browser_layout.addWidget(resize_button)
+
         # Add widgets to main layout
         # Smaller width for file browser
         main_layout.addWidget(file_browser_container, 1)
@@ -211,4 +217,9 @@ class MainWindow(QMainWindow):
     def show_upscale_dialog(self):
         """Show the upscale dialog when upscale batch button is clicked"""
         dialog = UpscaleDialog(self)
+        dialog.exec_()
+
+    def show_resize_dialog(self):
+        """Show the resize dialog when resize batch button is clicked"""
+        dialog = ResizeDialog(self)
         dialog.exec_()
