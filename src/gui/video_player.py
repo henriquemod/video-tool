@@ -22,53 +22,8 @@ from .crop_dialog import CropDialog
 from ..processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
 from ..utils.temp_file_manager import temp_manager
 from ..utils.icon_utils import generateIcon
-
-
-class VideoProcessingError(Exception):
-    """Custom exception for video processing related errors"""
-
-    def __init__(self, message: str, details: str = None):
-        """
-        Initialize VideoProcessingError.
-
-        Args:
-            message (str): Main error message
-            details (str, optional): Additional error details/context
-        """
-        self.message = message
-        self.details = details
-        super().__init__(self.message)
-
-    def __str__(self):
-        if self.details:
-            return f"{self.message}\nDetails: {self.details}"
-        return self.message
-
-
-class UpscaleError(Exception):
-    """Custom exception for AI upscaling related errors"""
-
-    def __init__(self, message: str, model_id: str = None, error_type: str = None):
-        """
-        Initialize UpscaleError.
-
-        Args:
-            message (str): Main error message
-            model_id (str, optional): ID of the model that failed
-            error_type (str, optional): Type of upscaling error (e.g. "CUDA", "Memory", "Model")
-        """
-        self.message = message
-        self.model_id = model_id
-        self.error_type = error_type
-        super().__init__(self.message)
-
-    def __str__(self):
-        error_msg = self.message
-        if self.model_id:
-            error_msg += f"\nModel: {self.model_id}"
-        if self.error_type:
-            error_msg += f"\nError Type: {self.error_type}"
-        return error_msg
+from ..exceptions.upscale_error import UpscaleError
+from ..exceptions.video_processing_error import VideoProcessingError
 
 
 class UpscaleThread(QThread):
