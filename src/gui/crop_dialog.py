@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton,
 from PyQt5.QtCore import Qt, QRect, QPoint, QSize, QStandardPaths
 from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor
 import os
+from ..utils.temp_file_manager import temp_manager
 
 
 class CustomRubberBand(QRubberBand):
@@ -369,23 +370,11 @@ class CropDialog(QDialog):
             # Crop the original image
             cropped_pixmap = self.pixmap.copy(scaled_rect)
 
-            # Generate default filename
-            default_name = f"{os.path.splitext(os.path.basename(self.image_path))[0]}_cropped.png"
-
-            # Ask user where to save the cropped image
-            self.cropped_path, _ = QFileDialog.getSaveFileName(
-                self,
-                "Save Cropped Image",
-                os.path.join(QStandardPaths.writableLocation(
-                    QStandardPaths.PicturesLocation), default_name),
-                "PNG Images (*.png);;JPEG Images (*.jpg *.jpeg);;All Files (*)"
-            )
-
-            if not self.cropped_path:  # User cancelled
-                return
-
-            # Save the cropped image
-            if cropped_pixmap.save(self.cropped_path):
+            # Save to temporary location
+            temp_path = temp_manager.get_temp_path(
+                prefix="cropped_", suffix=".png")
+            if cropped_pixmap.save(str(temp_path)):
+                self.result_path = temp_path
                 self.accept()
             else:
                 raise Exception("Failed to save cropped image")
@@ -394,6 +383,6 @@ class CropDialog(QDialog):
             QMessageBox.critical(
                 self, "Error", f"Failed to crop image: {str(e)}")
 
-    def get_cropped_path(self):
+    def get_result_path(self):
         """Return the path of the cropped image."""
-        return self.cropped_path
+        return getattr(self, 'result_path', None)

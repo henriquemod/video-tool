@@ -1,6 +1,7 @@
 import cv2
 import sys
 import os
+import shutil
 from PyQt5.QtCore import QStandardPaths
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
@@ -16,6 +17,7 @@ from .crop_dialog import CropDialog
 import torch
 import numpy as np
 from src.processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
+from ..utils.temp_file_manager import temp_manager
 
 
 def generateIcon(icon_name, fromTheme=False):
@@ -495,50 +497,47 @@ class VideoPlayer(QWidget):
                 self, "Error", "Failed to capture frame from video.")
             return
 
-        # Generate default filename with timestamp
-        default_filename = f"screenshot_{current_position}.png"
+        # Generate temp path for original screenshot
+        temp_screenshot = temp_manager.get_temp_path(
+            prefix="screenshot_", suffix=".png")
 
-        # Ask user where to save the screenshot
-        save_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Screenshot",
-            os.path.join(QStandardPaths.writableLocation(
-                QStandardPaths.PicturesLocation), default_filename),
-            "PNG Images (*.png);;All Files (*)"
-        )
+        # Save the original screenshot to temp location
+        cv2.imwrite(str(temp_screenshot), frame)
 
-        if not save_path:  # User cancelled
-            return
+        processing_path = temp_screenshot
+        final_path = None
 
-        # Save the original screenshot
-        cv2.imwrite(save_path, frame)
-        print(f"Original screenshot saved: {save_path}")
-
-        processing_path = save_path
-        final_path = save_path
-
-        # Handle cropping if enabled
-        if hasattr(self, 'allowCrop') and self.allowCrop:
-            try:
-                crop_dialog = CropDialog(save_path, self)
+        try:
+            # Handle cropping if enabled
+            if hasattr(self, 'allowCrop') and self.allowCrop:
+                crop_dialog = CropDialog(str(processing_path), self)
                 if crop_dialog.exec_() == QDialog.Accepted:
-                    processing_path = crop_dialog.get_cropped_path()
-                    if processing_path:
-                        print(f"Cropped image saved: {processing_path}")
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "Error", f"Failed to crop image: {str(e)}")
-                return
+                    processing_path = crop_dialog.get_result_path()
+                    if not processing_path:
+                        raise Exception("Cropping failed")
 
-        # Handle upscaling based on selected option
-        selected_model = get_available_models(
-        )[self.upscale_combo.currentIndex()]
-        if selected_model.id != "no_upscale":
-            try:
+            # Handle upscaling based on selected option
+            selected_model = get_available_models(
+            )[self.upscale_combo.currentIndex()]
+
+            if selected_model.id != "no_upscale":
                 # Read the image to upscale
-                img = cv2.imread(processing_path)
+                img = cv2.imread(str(processing_path))
                 if img is None:
                     raise Exception("Failed to load image for upscaling")
+
+                # Now we'll ask for the final save location
+                default_filename = f"enhanced_screenshot_{current_position}.png"
+                final_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "Save Enhanced Screenshot",
+                    os.path.join(QStandardPaths.writableLocation(
+                        QStandardPaths.PicturesLocation), default_filename),
+                    "PNG Images (*.png);;All Files (*)"
+                )
+
+                if not final_path:  # User cancelled
+                    return
 
                 # Create progress dialog
                 progress = QProgressDialog(
@@ -554,7 +553,7 @@ class VideoPlayer(QWidget):
                 self.upscale_thread.progress.connect(progress.setValue)
                 self.upscale_thread.finished.connect(
                     lambda result: self.handle_upscale_finished(
-                        result, processing_path, selected_model.id, selected_model.scale, progress
+                        result, final_path, selected_model.id, selected_model.scale, progress
                     )
                 )
                 self.upscale_thread.error.connect(
@@ -571,21 +570,49 @@ class VideoPlayer(QWidget):
                 progress.exec_()
                 return
 
-            except Exception as e:
-                QMessageBox.critical(
-                    self, "Error", f"Failed to upscale image: {str(e)}")
-                return
+            # If no upscaling, but cropping was done, save the cropped image
+            elif processing_path != temp_screenshot:
+                # Ask for save location for cropped image
+                default_filename = f"cropped_screenshot_{current_position}.png"
+                final_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "Save Cropped Screenshot",
+                    os.path.join(QStandardPaths.writableLocation(
+                        QStandardPaths.PicturesLocation), default_filename),
+                    "PNG Images (*.png);;All Files (*)"
+                )
 
-        # Show success message with all saved paths
-        saved_paths = [p for p in [save_path, processing_path, final_path]
-                       if p and os.path.exists(p) and p != save_path]
+                if final_path:
+                    shutil.copy2(processing_path, final_path)
 
-        if saved_paths:
-            message = "Files saved:\n" + "\n".join(saved_paths)
-        else:
-            message = f"Screenshot saved: {save_path}"
+            # If no processing was done, save original screenshot
+            else:
+                default_filename = f"screenshot_{current_position}.png"
+                final_path, _ = QFileDialog.getSaveFileName(
+                    self,
+                    "Save Screenshot",
+                    os.path.join(QStandardPaths.writableLocation(
+                        QStandardPaths.PicturesLocation), default_filename),
+                    "PNG Images (*.png);;All Files (*)"
+                )
 
-        QMessageBox.information(self, "Success", message)
+                if final_path:
+                    shutil.copy2(temp_screenshot, final_path)
+
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Error", f"Failed to process image: {str(e)}")
+        finally:
+            # Cleanup temporary files
+            if temp_screenshot != processing_path:
+                temp_manager.remove_temp_file(temp_screenshot)
+            if processing_path and processing_path != temp_screenshot:
+                temp_manager.remove_temp_file(processing_path)
+
+        # Show success message if file was saved
+        if final_path and os.path.exists(final_path):
+            QMessageBox.information(
+                self, "Success", f"Image saved: {final_path}")
 
     def closeEvent(self, event):
         """
