@@ -1,3 +1,13 @@
+"""
+Utility functions for handling icons in the application.
+
+This module provides helper functions for generating and manipulating QIcons,
+including functionality to convert theme icons to specific colors. It's primarily
+used for consistent icon handling across the application's user interface.
+
+Functions:
+    generateIcon: Creates a QIcon from a theme icon name with optional color conversion.
+"""
 from PyQt5.QtGui import QIcon, QColor, QPainter
 from PyQt5.QtCore import QSize
 
