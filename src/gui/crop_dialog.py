@@ -1,22 +1,35 @@
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QPushButton,
-                             QLabel, QRubberBand, QMessageBox,
-                             QComboBox, QHBoxLayout, QFileDialog)
-from PyQt5.QtCore import Qt, QRect, QPoint, QSize, QStandardPaths
-from PyQt5.QtGui import QPixmap, QPainter, QPen, QColor
-import os
+"""
+Crop Dialog Module - Provides an interactive image cropping interface with aspect ratio control.
+
+This module implements a sophisticated image cropping dialog with real-time preview,
+aspect ratio control, and grid overlay support for precise image cropping operations.
+"""
+
+from PyQt5 import QtWidgets, QtCore, QtGui
 from ..utils.temp_file_manager import temp_manager
 
 
-class CustomRubberBand(QRubberBand):
+class CustomRubberBand(QtWidgets.QRubberBand):
+    """
+    Enhanced rubber band widget with grid overlay for image cropping.
+    
+    Provides visual guides including rule of thirds grid and custom border styling.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.grid_enabled = True
 
-    def paintEvent(self, event):
-        """Custom paint event to draw dashed border and grid."""
-        painter = QPainter(self)
-        pen = QPen(QColor(255, 255, 255))
-        pen.setStyle(Qt.DashLine)
+    def paint_event(self, _):
+        """
+        Custom paint event to draw dashed border and grid.
+        
+        Args:
+            _: Unused paint event parameter
+        """
+        painter = QtGui.QPainter(self)
+        pen = QtGui.QPen(QtGui.QColor(255, 255, 255))
+        pen.setStyle(QtCore.Qt.DashLine)
         pen.setWidth(2)
         painter.setPen(pen)
 
@@ -39,125 +52,55 @@ class CustomRubberBand(QRubberBand):
                 painter.drawLine(x, rect.top(), x, rect.bottom())
 
 
-class CropDialog(QDialog):
+class CropDialog(QtWidgets.QDialog):
     """
-    CropDialog - Interactive Image Cropping Interface
+    Main dialog for image cropping with aspect ratio control and interactive selection.
 
-    This module implements a sophisticated image cropping dialog with real-time preview,
-    aspect ratio control, and grid overlay support. It provides a professional-grade
-    interface for precise image cropping operations.
-
-    Key Features:
-    - Interactive rubber band selection
-    - Customizable aspect ratios
-    - Rule of thirds grid overlay
-    - Real-time preview
-    - High-resolution support
-    - Drag and resize capabilities
-
-    Components:
-    1. Selection Interface:
-        - Custom rubber band implementation with grid overlay
-        - Drag-to-create and drag-to-move functionality
-        - Resize handles for fine adjustment
-        - Boundary constraints to image dimensions
-
-    2. Aspect Ratio Control:
-        - Predefined aspect ratio options:
-            * Free Crop (unconstrained)
-            * 1:1 (Square)
-            * 4:3 (Standard)
-            * 16:9 (Widescreen)
-            * 3:2 (Classic Photo)
-            * 2:3 (Portrait)
-        - Dynamic constraint maintenance during resizing
-        - Automatic centering for ratio changes
-
-    3. Visual Aids:
-        - Rule of thirds grid overlay
-        - Selection border with dashed style
-        - Real-time dimension display
-        - Visual feedback for constraints
-
-    Classes:
-        CustomRubberBand(QRubberBand):
-            Enhanced rubber band widget with grid overlay
-            Features:
-                - Custom border styling
-                - Rule of thirds grid
-                - Dynamic size updates
-
-        CropDialog(QDialog):
-            Main cropping interface
-            Features:
-                - Image loading and display
-                - Selection management
-                - Aspect ratio control
-                - Result processing
-
-    Technical Implementation:
-    - Efficient image scaling for display
-    - Responsive selection updates
-    - Precise coordinate mapping
-    - Memory-efficient image handling
-
-    Mouse Interaction:
-    1. Creation Mode:
-        - Click and drag to create selection
-        - Maintains aspect ratio if specified
-        - Constrains to image boundaries
-
-    2. Edit Mode:
-        - Click and drag existing selection
-        - Resize from edges/corners
-        - Snap to image boundaries
-
-    Dependencies:
-    - PyQt5: Core GUI framework
-    - PIL/Pillow: Image processing
-    - numpy: Coordinate calculations
-
-    Example Usage:
-        dialog = CropDialog(image_path, parent)
-        if dialog.exec_() == QDialog.Accepted:
-            cropped_path = dialog.get_cropped_path()
-
-    Performance Considerations:
-    - Efficient image scaling for preview
-    - Smooth selection updates
-    - Proper cleanup of resources
-    - Memory management for large images
-
-    Error Handling:
-    - Invalid image files
-    - Out of memory conditions
-    - File system errors
-    - Coordinate validation
-
-    @see @Project Structure#crop_dialog.py
-    @see @Project#Image Processing
-    @see @Project#UI Components
+    Attributes:
+        image_path (str): Path to the image being cropped
+        cropped_path (str): Path where the cropped image will be saved
+        is_dragging (bool): Flag indicating if selection is being dragged
+        drag_start_pos (QtCore.QPoint): Starting position of drag operation
+        initial_rect (QtCore.QRect): Initial rectangle before drag
+        current_aspect_ratio (float): Current aspect ratio constraint
     """
 
     def __init__(self, image_path, parent=None):
         super().__init__(parent)
+        # Initialize paths
         self.image_path = image_path
         self.cropped_path = None
+        self.result_path = None
+
+        # Initialize selection state
         self.is_dragging = False
         self.drag_start_pos = None
         self.initial_rect = None
         self.current_aspect_ratio = None
+        self.selected_rect = None
+        self.origin = None
+
+        # Initialize UI components
+        self.image_label = None
+        self.pixmap = None
+        self.aspect_combo = None
+        self.crop_button = None
+        self.rubber_band = None
+
         self.setup_ui()
 
+        # Add event filter to image_label
+        self.image_label.installEventFilter(self)
+
     def setup_ui(self):
-        """Set up the dialog UI."""
+        """Set up the dialog UI components and layouts."""
         self.setWindowTitle("Crop Image")
-        layout = QVBoxLayout()
+        layout = QtWidgets.QVBoxLayout()
 
         # Add aspect ratio selector
-        aspect_layout = QHBoxLayout()
-        aspect_label = QLabel("Aspect Ratio:")
-        self.aspect_combo = QComboBox()
+        aspect_layout = QtWidgets.QHBoxLayout()
+        aspect_label = QtWidgets.QLabel("Aspect Ratio:")
+        self.aspect_combo = QtWidgets.QComboBox()
         self.aspect_combo.addItems([
             "Free Crop",
             "1:1 (Square)",
@@ -166,27 +109,29 @@ class CropDialog(QDialog):
             "3:2",
             "2:3 (Portrait)"
         ])
-        self.aspect_combo.currentTextChanged.connect(
-            self.on_aspect_ratio_changed)
+        self.aspect_combo.currentTextChanged.connect(self.on_aspect_ratio_changed)
         aspect_layout.addWidget(aspect_label)
         aspect_layout.addWidget(self.aspect_combo)
         aspect_layout.addStretch()
         layout.addLayout(aspect_layout)
 
         # Load and display the image
-        self.image_label = QLabel()
-        self.pixmap = QPixmap(self.image_path)
+        self.image_label = QtWidgets.QLabel()
+        self.pixmap = QtGui.QPixmap(self.image_path)
 
         # Check if the pixmap is valid
         if self.pixmap.isNull():
-            QMessageBox.critical(
+            QtWidgets.QMessageBox.critical(
                 self, "Error", "Failed to load image for cropping.")
             self.reject()
             return
 
         # Scale pixmap if too large while maintaining aspect ratio
-        scaled_pixmap = self.pixmap.scaled(800, 600, Qt.KeepAspectRatio,
-                                           Qt.SmoothTransformation)
+        scaled_pixmap = self.pixmap.scaled(
+            800, 600,
+            QtCore.Qt.KeepAspectRatio,
+            QtCore.Qt.SmoothTransformation
+        )
         self.image_label.setPixmap(scaled_pixmap)
 
         # Enable mouse tracking for rubber band selection
@@ -194,7 +139,7 @@ class CropDialog(QDialog):
         layout.addWidget(self.image_label)
 
         # Add crop button
-        self.crop_button = QPushButton("Crop")
+        self.crop_button = QtWidgets.QPushButton("Crop")
         self.crop_button.clicked.connect(self.crop_image)
         layout.addWidget(self.crop_button)
 
@@ -202,155 +147,131 @@ class CropDialog(QDialog):
 
         # Initialize rubber band
         self.rubber_band = CustomRubberBand(
-            QRubberBand.Rectangle, self.image_label)
-        self.origin = None
+            QtWidgets.QRubberBand.Rectangle, self.image_label)
 
-    def on_aspect_ratio_changed(self, text):
-        """Handle aspect ratio selection changes."""
-        ratios = {
-            "Free Crop": None,
-            "1:1 (Square)": 1/1,
-            "4:3": 4/3,
-            "16:9": 16/9,
-            "3:2": 3/2,
-            "2:3 (Portrait)": 2/3
-        }
-        self.current_aspect_ratio = ratios[text]
+    def eventFilter(self, obj, event):
+        """
+        Handle mouse events from the image label.
+        
+        Args:
+            obj: Object that triggered the event
+            event: Event to be processed
+        """
+        if obj == self.image_label:
+            if event.type() == QtCore.QEvent.MouseButtonPress:
+                self.handle_mouse_press(event)
+                return True
+            elif event.type() == QtCore.QEvent.MouseMove:
+                self.handle_mouse_move(event)
+                return True
+            elif event.type() == QtCore.QEvent.MouseButtonRelease:
+                self.handle_mouse_release(event)
+                return True
+        return super().eventFilter(obj, event)
 
-        # Clear existing selection if it exists
-        if hasattr(self, 'selected_rect'):
-            self.selected_rect = None
-            self.rubber_band.hide()
+    def closeEvent(self, event):
+        """Handle dialog close event."""
+        self.result_path = None
+        event.accept()
 
-    def adjust_selection_aspect_ratio(self):
-        """Adjust the current selection to match the chosen aspect ratio."""
-        if not self.current_aspect_ratio:
-            return
+    def handle_mouse_press(self, event):
+        """
+        Handle mouse press events for selection creation and movement.
+        
+        Args:
+            event: Mouse event containing position information
+        """
+        if event.button() == QtCore.Qt.LeftButton:
+            pos = event.pos()  # Event pos is already relative to image_label
+            # Check if the click is within the image label bounds
+            if not self.image_label.rect().contains(pos):
+                return
 
-        current_rect = self.rubber_band.geometry()
-        new_width = current_rect.width()
-        new_height = int(new_width / self.current_aspect_ratio)
-
-        # If new height would exceed image bounds, adjust width instead
-        if new_height > self.image_label.height():
-            new_height = current_rect.height()
-            new_width = int(new_height * self.current_aspect_ratio)
-
-        # Center the new rectangle on the old one
-        x = current_rect.x() + (current_rect.width() - new_width) // 2
-        y = current_rect.y() + (current_rect.height() - new_height) // 2
-
-        self.selected_rect = QRect(x, y, new_width, new_height)
-        self.rubber_band.setGeometry(self.selected_rect)
-
-    def mousePressEvent(self, event):
-        """Handle mouse press for both creating and moving selection."""
-        if event.button() == Qt.LeftButton:
-            pos = self.image_label.mapFrom(self, event.pos())
-
-            if (hasattr(self, 'selected_rect') and
-                self.selected_rect is not None and
-                    self.selected_rect.contains(pos)):
+            if (hasattr(self, 'selected_rect') and 
+                self.selected_rect is not None and 
+                self.selected_rect.contains(pos)):
                 self.is_dragging = True
                 self.drag_start_pos = pos
-                self.initial_rect = QRect(self.selected_rect)
+                self.initial_rect = QtCore.QRect(self.selected_rect)
             else:
                 self.is_dragging = False
                 self.origin = pos
-                self.rubber_band.setGeometry(QRect(self.origin, QSize(1, 1)))
+                self.rubber_band.setGeometry(QtCore.QRect(pos, QtCore.QSize()))
                 self.rubber_band.show()
 
-    def mouseMoveEvent(self, event):
-        """Handle mouse movement for both resizing and moving selection."""
-        pos = self.image_label.mapFrom(self, event.pos())
-
+    def handle_mouse_move(self, event):
+        """
+        Handle mouse movement for selection resizing and moving.
+        
+        Args:
+            event: Mouse event containing position information
+        """
+        pos = event.pos()  # Event pos is already relative to image_label
         # Constrain position to image boundaries
         pos.setX(max(0, min(pos.x(), self.image_label.width())))
         pos.setY(max(0, min(pos.y(), self.image_label.height())))
 
         if self.is_dragging and self.drag_start_pos:
+            # Move the existing selection
             delta = pos - self.drag_start_pos
             new_rect = self.initial_rect.translated(delta)
-
-            # Keep selection within image bounds
-            label_rect = self.image_label.rect()
-            if new_rect.right() > label_rect.width():
-                new_rect.moveRight(label_rect.width())
-            if new_rect.bottom() > label_rect.height():
-                new_rect.moveBottom(label_rect.height())
+            # Constrain to image boundaries
             if new_rect.left() < 0:
                 new_rect.moveLeft(0)
+            if new_rect.right() > self.image_label.width():
+                new_rect.moveRight(self.image_label.width())
             if new_rect.top() < 0:
                 new_rect.moveTop(0)
-
+            if new_rect.bottom() > self.image_label.height():
+                new_rect.moveBottom(self.image_label.height())
             self.selected_rect = new_rect
             self.rubber_band.setGeometry(self.selected_rect)
-        elif self.origin:
-            # Calculate the raw rectangle from origin to current position
-            current_rect = QRect(self.origin, pos).normalized()
-
+        elif hasattr(self, 'origin') and self.origin:
+            # Create new selection
+            rect = QtCore.QRect(self.origin, pos).normalized()
             if self.current_aspect_ratio:
-                # Calculate dimensions maintaining aspect ratio
-                if abs(pos.x() - self.origin.x()) > abs(pos.y() - self.origin.y()):
-                    # Width is dominant
-                    width = min(abs(pos.x() - self.origin.x()),
-                                self.image_label.width() - self.origin.x())
-                    height = int(width / self.current_aspect_ratio)
-
-                    # Adjust if height exceeds boundaries
-                    if height > self.image_label.height() - min(self.origin.y(), pos.y()):
-                        height = self.image_label.height() - min(self.origin.y(), pos.y())
-                        width = int(height * self.current_aspect_ratio)
-                else:
-                    # Height is dominant
-                    height = min(abs(pos.y() - self.origin.y()),
-                                 self.image_label.height() - self.origin.y())
+                # Maintain aspect ratio while dragging
+                width = rect.width()
+                height = int(width / self.current_aspect_ratio)
+                if height > self.image_label.height():
+                    height = self.image_label.height()
                     width = int(height * self.current_aspect_ratio)
+                rect.setHeight(height)
+                rect.setWidth(width)
+            self.rubber_band.setGeometry(rect)
 
-                    # Adjust if width exceeds boundaries
-                    if width > self.image_label.width() - min(self.origin.x(), pos.x()):
-                        width = self.image_label.width() - min(self.origin.x(), pos.x())
-                        height = int(width / self.current_aspect_ratio)
-
-                # Determine direction of drag to properly position the rectangle
-                x = self.origin.x()
-                y = self.origin.y()
-
-                if pos.x() < self.origin.x():
-                    x = max(0, self.origin.x() - width)
-                if pos.y() < self.origin.y():
-                    y = max(0, self.origin.y() - height)
-
-                # Create new rect with calculated dimensions
-                new_rect = QRect(x, y, width, height)
-            else:
-                # Free crop mode
-                new_rect = current_rect
-
-                # Ensure the rectangle stays within the image bounds
-                new_rect = new_rect.intersected(self.image_label.rect())
-
-            self.rubber_band.setGeometry(new_rect)
-
-    def mouseReleaseEvent(self, event):
-        """Handle mouse release for both creation and moving."""
-        if event.button() == Qt.LeftButton:
-            pos = self.image_label.mapFrom(self, event.pos())
-
+    def handle_mouse_release(self, event):
+        """
+        Handle mouse release events for selection completion.
+        
+        Args:
+            event: Mouse event containing position information
+        """
+        if event.button() == QtCore.Qt.LeftButton:
             if self.is_dragging:
                 self.is_dragging = False
                 self.drag_start_pos = None
                 self.initial_rect = None
-            else:
-                # Use the current rubber band geometry instead of creating a new rect
-                self.selected_rect = QRect(self.rubber_band.geometry())
-                # No need to hide and show again
-                self.rubber_band.setGeometry(self.selected_rect)
+            elif hasattr(self, 'origin') and self.origin:
+                pos = event.pos()  # Event pos is already relative to image_label
+                rect = QtCore.QRect(self.origin, pos).normalized()
+                if self.current_aspect_ratio:
+                    # Maintain aspect ratio for final selection
+                    width = rect.width()
+                    height = int(width / self.current_aspect_ratio)
+                    if height > self.image_label.height():
+                        height = self.image_label.height()
+                        width = int(height * self.current_aspect_ratio)
+                    rect.setHeight(height)
+                    rect.setWidth(width)
+                self.selected_rect = rect
+                self.rubber_band.setGeometry(rect)
+                self.origin = None
 
     def crop_image(self):
         """Crop the image using the selected area and save it."""
         if not hasattr(self, 'selected_rect'):
-            QMessageBox.warning(
+            QtWidgets.QMessageBox.warning(
                 self, "Warning", "Please select an area to crop")
             return
 
@@ -360,7 +281,7 @@ class CropDialog(QDialog):
             scale_y = self.pixmap.height() / self.image_label.pixmap().height()
 
             # Scale the selection rectangle to match original image dimensions
-            scaled_rect = QRect(
+            scaled_rect = QtCore.QRect(
                 int(self.selected_rect.x() * scale_x),
                 int(self.selected_rect.y() * scale_y),
                 int(self.selected_rect.width() * scale_x),
@@ -373,16 +294,59 @@ class CropDialog(QDialog):
             # Save to temporary location
             temp_path = temp_manager.get_temp_path(
                 prefix="cropped_", suffix=".png")
-            if cropped_pixmap.save(str(temp_path)):
-                self.result_path = temp_path
-                self.accept()
-            else:
-                raise Exception("Failed to save cropped image")
+            if not cropped_pixmap.save(str(temp_path)):
+                raise RuntimeError("Failed to save cropped image")
 
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Error", f"Failed to crop image: {str(e)}")
+            self.result_path = temp_path
+            self.accept()
+
+        except RuntimeError as err:
+            QtWidgets.QMessageBox.critical(
+                self, "Error", f"Failed to crop image: {str(err)}")
 
     def get_result_path(self):
         """Return the path of the cropped image."""
         return getattr(self, 'result_path', None)
+
+    def on_aspect_ratio_changed(self, text):
+        """
+        Handle aspect ratio changes from the combo box.
+        
+        Args:
+            text (str): Selected aspect ratio text from combo box
+        """
+        # Parse the aspect ratio from the selected text
+        if text == "Free Crop":
+            self.current_aspect_ratio = None
+        else:
+            try:
+                # Extract ratio values from text (e.g., "16:9" -> 16/9)
+                if ":" in text:
+                    width, height = map(float, text.split("(")[0].strip().split(":"))
+                    self.current_aspect_ratio = width / height
+                elif text == "1:1 (Square)":
+                    self.current_aspect_ratio = 1.0
+            except (ValueError, IndexError):
+                self.current_aspect_ratio = None
+
+        # Update the selection if it exists
+        if hasattr(self, 'selected_rect') and self.selected_rect:
+            if self.current_aspect_ratio:
+                # Maintain the current center while adjusting to new aspect ratio
+                center = self.selected_rect.center()
+                width = self.selected_rect.width()
+                new_height = int(width / self.current_aspect_ratio)
+                new_rect = QtCore.QRect(
+                    self.selected_rect.x(),
+                    center.y() - new_height // 2,
+                    width,
+                    new_height
+                )
+                # Ensure the new rectangle fits within the image bounds
+                image_rect = self.image_label.rect()
+                if new_rect.top() < 0:
+                    new_rect.moveTop(0)
+                if new_rect.bottom() > image_rect.bottom():
+                    new_rect.moveBottom(image_rect.bottom())
+                self.selected_rect = new_rect
+                self.rubber_band.setGeometry(self.selected_rect)
