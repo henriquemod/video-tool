@@ -14,6 +14,7 @@ from .video_player import VideoPlayer
 from .download_dialog import DownloadDialog
 from .upscale_dialog import UpscaleDialog
 from .resize_dialog import ResizeDialog
+from ..utils.icon_utils import generateIcon
 import os
 
 
@@ -123,23 +124,35 @@ class MainWindow(QMainWindow):
         # Add file browser
         file_browser_layout.addWidget(self.file_browser)
 
-        # Add Load from folder button
-        load_folder_button = QPushButton("Load from folder")
+        # Add Load from folder button with 'folder-open' icon
+        load_folder_button = QPushButton(" Load from folder")
+        load_folder_button.setIcon(generateIcon("folder-open", True))
+        load_folder_button.setStyleSheet(
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
         load_folder_button.clicked.connect(self.change_browser_folder)
         file_browser_layout.addWidget(load_folder_button)
 
-        # Add download button
-        download_button = QPushButton("Download video")
+        # Add download button with 'document-save' icon (closest match for download)
+        download_button = QPushButton(" Download video")
+        download_button.setIcon(generateIcon("document-save", True))
+        download_button.setStyleSheet(
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
         download_button.clicked.connect(self.show_download_dialog)
         file_browser_layout.addWidget(download_button)
 
-        # Add the new upscale batch button
-        upscale_button = QPushButton("Upscale batch")
+        # Add the upscale batch button with 'zoom-fit-best' icon
+        upscale_button = QPushButton(" Upscale batch")
+        upscale_button.setIcon(generateIcon("zoom-fit-best", True))
+        upscale_button.setStyleSheet(
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
         upscale_button.clicked.connect(self.show_upscale_dialog)
         file_browser_layout.addWidget(upscale_button)
 
-        # Add the new resize batch button
-        resize_button = QPushButton("Resize batch")
+        # Add the resize batch button with 'view-fullscreen' icon (closest match for resize)
+        resize_button = QPushButton(" Resize batch")
+        resize_button.setIcon(generateIcon("view-fullscreen", True))
+        resize_button.setStyleSheet(
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
         resize_button.clicked.connect(self.show_resize_dialog)
         file_browser_layout.addWidget(resize_button)
 

@@ -18,20 +18,7 @@ import torch
 import numpy as np
 from src.processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
 from ..utils.temp_file_manager import temp_manager
-
-
-def generateIcon(icon_name, fromTheme=False):
-    icon = QIcon.fromTheme(icon_name)
-    if fromTheme:
-        return icon
-    else:
-        pixmap = icon.pixmap(QSize(32, 32))  # Get pixmap of appropriate size
-        # Create painter to modify the pixmap
-        painter = QPainter(pixmap)
-        painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
-        painter.fillRect(pixmap.rect(), QColor(0, 0, 0))  # Fill with black
-        painter.end()
-        return QIcon(pixmap)
+from ..utils.icon_utils import generateIcon
 
 
 class UpscaleThread(QThread):
