@@ -92,17 +92,20 @@ python main.py
 ├── main.py
 ├── src/
 │   ├── app.py
+│   ├── exceptions/ # Custom exception handling
+│   │   ├── upscale_error.py # AI upscaling exceptions
+│   │   └── video_processing_error.py # Video processing exceptions
 │   ├── gui/
-│   │   ├── main_window.py      # Main application window
-│   │   ├── video_player.py     # Video playback component
-│   │   ├── download_dialog.py  # Video download interface
-│   │   ├── crop_dialog.py      # Image cropping interface
-│   │   ├── upscale_dialog.py   # AI upscaling interface
-│   │   └── resize_dialog.py    # Image resizing interface
+│   │   ├── main_window.py # Main application window
+│   │   ├── video_player.py # Video playback component
+│   │   ├── download_dialog.py # Video download interface
+│   │   ├── crop_dialog.py # Image cropping interface
+│   │   ├── upscale_dialog.py # AI upscaling interface
+│   │   └── resize_dialog.py # Image resizing interface
 │   ├── processing/
-│   │   └── ai_upscaling.py     # AI enhancement implementation
+│   │   └── ai_upscaling.py # AI enhancement implementation
 │   └── utils/
-│       ├── icon_utils.py       # Icon management
+│       ├── icon_utils.py # Icon management
 │       └── temp_file_manager.py # Temporary file handling
 ```
 
