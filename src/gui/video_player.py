@@ -7,6 +7,7 @@ import sys
 import os
 import shutil
 import cv2
+import torch
 from PyQt5.QtCore import QStandardPaths
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
@@ -23,19 +24,77 @@ from ..utils.temp_file_manager import temp_manager
 from ..utils.icon_utils import generateIcon
 
 
+class VideoProcessingError(Exception):
+    """Custom exception for video processing related errors"""
+
+    def __init__(self, message: str, details: str = None):
+        """
+        Initialize VideoProcessingError.
+
+        Args:
+            message (str): Main error message
+            details (str, optional): Additional error details/context
+        """
+        self.message = message
+        self.details = details
+        super().__init__(self.message)
+
+    def __str__(self):
+        if self.details:
+            return f"{self.message}\nDetails: {self.details}"
+        return self.message
+
+
+class UpscaleError(Exception):
+    """Custom exception for AI upscaling related errors"""
+
+    def __init__(self, message: str, model_id: str = None, error_type: str = None):
+        """
+        Initialize UpscaleError.
+
+        Args:
+            message (str): Main error message
+            model_id (str, optional): ID of the model that failed
+            error_type (str, optional): Type of upscaling error (e.g. "CUDA", "Memory", "Model")
+        """
+        self.message = message
+        self.model_id = model_id
+        self.error_type = error_type
+        super().__init__(self.message)
+
+    def __str__(self):
+        error_msg = self.message
+        if self.model_id:
+            error_msg += f"\nModel: {self.model_id}"
+        if self.error_type:
+            error_msg += f"\nError Type: {self.error_type}"
+        return error_msg
+
+
 class UpscaleThread(QThread):
     """Thread for handling AI upscaling operations"""
     progress = pyqtSignal(int)
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
 
-    def __init__(self, img, model_id: str, progress_callback=None):
+    def __init__(self, img, model_id: str):
         super().__init__()
         self.img = img
         self.model_id = model_id
         self.upscaler = AIUpscaler()
 
     def run(self):
+        """
+        Execute the upscaling operation in a separate thread.
+
+        This method runs the AI upscaling process using the configured model,
+        emitting progress updates and handling errors appropriately.
+
+        Signals:
+            progress (int): Emits progress percentage during upscaling
+            finished (object): Emits the upscaled image result on success
+            error (str): Emits error message if upscaling fails
+        """
         try:
             # Use the centralized upscaler
             result = self.upscaler.upscale(
@@ -46,11 +105,22 @@ class UpscaleThread(QThread):
 
             if result is not None:
                 self.finished.emit(result)
+            else:
+                raise UpscaleError("Upscaling failed: No output received")
 
-        except Exception as e:
+        except (RuntimeError, ValueError, IOError) as e:
+            # Handle specific exceptions that might occur during upscaling
+            self.error.emit(f"Upscaling error: {str(e)}")
+        except UpscaleError as e:
+            # Handle custom upscaling errors
             self.error.emit(str(e))
+        except Exception as e:
+            # Log unexpected errors but present a user-friendly message
+            print(f"Unexpected error during upscaling: {str(e)}")
+            self.error.emit("An unexpected error occurred during upscaling")
 
     def cancel(self):
+        """Cancel the upscaling operation."""
         self.upscaler.cancel()
 
 
@@ -128,13 +198,11 @@ class VideoPlayer(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Initialize outputFolder with a default path
+        # Initialize instance attributes
         self.outputFolder = QDir.currentPath()
-
-        # Initialize ai_capable attribute
         self.ai_capable = self.check_ai_capabilities()
 
-        # Set up the video player
+        # Initialize GUI components
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         self.mediaPlayer.setNotifyInterval(250)
         self.videoWidget = QVideoWidget()
@@ -142,12 +210,28 @@ class VideoPlayer(QWidget):
         # Initialize OpenCV VideoCapture
         self.cap = None
 
+        # Initialize UI elements
+        self.currentTimeLabel = QLabel("00:00:00:00")
+        self.totalTimeLabel = QLabel("00:00:00:00")
+        self.back30SecondsButton = None
+        self.back15SecondsButton = None
+        self.backFrameButton = None
+        self.playButton = None
+        self.stopButton = None
+        self.forwardFrameButton = None
+        self.forward15SecondsButton = None
+        self.forward30SecondsButton = None
+        self.screenshotButton = None
+        self.upscale_thread = None
+
+        self.allowCrop = False
+
+        # Set up the video player
+        self.mediaPlayer.setVideoOutput(self.videoWidget)
+
         # Set up the main layout
         mainLayout = QVBoxLayout()
         mainLayout.addWidget(self.videoWidget)
-
-        # Set up the media player
-        self.mediaPlayer.setVideoOutput(self.videoWidget)
 
         # Create the position slider
         self.positionSlider = QSlider(Qt.Horizontal)
@@ -172,7 +256,11 @@ class VideoPlayer(QWidget):
                 }
             """)
 
-        # Add playback controls and volume
+        # Set fixed heights for time labels
+        self.currentTimeLabel.setFixedHeight(20)
+        self.totalTimeLabel.setFixedHeight(20)
+
+        # Set up playback controls and volume
         self.setup_playback_controls(mainLayout)
 
         # Add additional options (Upscale, Crop, and Volume) in the same row
@@ -186,9 +274,6 @@ class VideoPlayer(QWidget):
         self.mediaPlayer.durationChanged.connect(self.duration_changed)
         self.mediaPlayer.stateChanged.connect(self.media_state_changed)
 
-        # Initialize crop checkbox as False by default
-        self.allowCrop = False
-
         # Initialize upscaler
         self.upscaler = AIUpscaler()
 
@@ -196,6 +281,9 @@ class VideoPlayer(QWidget):
         """
         Returns the directory where video data is stored.
         Modify this method to return the appropriate path as needed.
+
+        Returns:
+            str: Path to the data directory
         """
         # Example: Return user's Videos directory
         return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
@@ -203,11 +291,6 @@ class VideoPlayer(QWidget):
     def check_ai_capabilities(self):
         """Check if system can run AI upscaling."""
         try:
-            # First try to import required modules
-            import torch
-            from basicsr.archs.rrdbnet_arch import RRDBNet
-            from realesrgan import RealESRGANer
-
             # Check for GPU support
             has_cuda = torch.cuda.is_available()
             has_mps = hasattr(
@@ -225,98 +308,95 @@ class VideoPlayer(QWidget):
                 print("No compatible GPU detected, AI upscaling will use CPU (slow)")
                 return False
 
-        except ImportError as e:
-            print(f"AI capabilities not available: {str(e)}")
+        except (RuntimeError, AttributeError) as e:
+            # RuntimeError: CUDA initialization errors
+            # AttributeError: Missing torch attributes/methods
+            print(f"Error checking AI capabilities: {str(e)}")
             print("To enable AI upscaling, install required packages with:")
             print(
                 "pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
             return False
-        except Exception as e:
+        except (ImportError, OSError) as e:
+            # Handle missing dependencies and system-level errors
             print(f"Error checking AI capabilities: {str(e)}")
+            if isinstance(e, ImportError):
+                print("To enable AI upscaling, install required packages with:")
+                print(
+                    "pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
+            else:
+                print("Please ensure your GPU drivers are up to date")
             return False
 
     def setup_playback_controls(self, parent_layout):
         """Set up the playback control buttons in sequence."""
-        # First row - slider only
-        sliderLayout = QHBoxLayout()
-        sliderLayout.setContentsMargins(0, 0, 0, 0)
-        sliderLayout.setSpacing(5)
+        slider_layout = QHBoxLayout()
+        slider_layout.setContentsMargins(0, 0, 0, 0)
+        slider_layout.setSpacing(5)
 
-        self.currentTimeLabel = QLabel("00:00:00:00")
-        self.totalTimeLabel = QLabel("00:00:00:00")
-        self.currentTimeLabel.setFixedHeight(20)
-        self.totalTimeLabel.setFixedHeight(20)
-        self.positionSlider.setFixedHeight(20)
+        slider_layout.addWidget(self.currentTimeLabel)
+        slider_layout.addWidget(self.positionSlider)
+        slider_layout.addWidget(self.totalTimeLabel)
+        parent_layout.addLayout(slider_layout)
 
-        sliderLayout.addWidget(self.currentTimeLabel)
-        sliderLayout.addWidget(self.positionSlider)
-        sliderLayout.addWidget(self.totalTimeLabel)
-        parent_layout.addLayout(sliderLayout)
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Second row - playback controls and screenshot
-        controlsLayout = QHBoxLayout()
-        controlsLayout.setContentsMargins(0, 0, 0, 0)
+        self.create_navigation_buttons()
+        self.create_screenshot_button()
+        self.connect_button_signals()
+        self.add_buttons_to_layout(controls_layout)
 
-        # Navigation buttons with standard icons and tooltips
-        self.back30SecondsButton = QPushButton(" x2")
-        self.back30SecondsButton.setFixedSize(100, 36)
-        self.back30SecondsButton.setToolTip("Jump back 30 seconds")
-        self.back30SecondsButton.setIcon(
-            generateIcon("media-seek-backward"))
+        parent_layout.addLayout(controls_layout)
 
-        self.back15SecondsButton = QPushButton()
-        self.back15SecondsButton.setFixedSize(100, 36)
-        self.back15SecondsButton.setToolTip("Jump back 15 seconds")
-        self.back15SecondsButton.setIcon(
-            generateIcon("media-seek-backward"))
+    def create_navigation_buttons(self):
+        """Create all navigation buttons with their properties."""
+        # Back buttons
+        self.back30SecondsButton = self._create_button(
+            " x2", "Jump back 30 seconds", "media-seek-backward")
+        self.back15SecondsButton = self._create_button(
+            "", "Jump back 15 seconds", "media-seek-backward")
+        self.backFrameButton = self._create_button(
+            "-", "Previous frame", style="font-weight: bold")
 
-        self.backFrameButton = QPushButton("-")
-        self.backFrameButton.setFixedSize(100, 36)
-        self.backFrameButton.setToolTip("Previous frame")
-        self.backFrameButton.setStyleSheet(
-            "QPushButton { font-weight: bold; } ")
+        # Playback buttons
+        self.playButton = self._create_button(
+            "", "Play/Pause", "media-playback-start")
+        self.stopButton = self._create_button(
+            "", "Stop", "media-playback-stop")
 
-        self.playButton = QPushButton()
-        self.playButton.setFixedSize(100, 36)
-        self.playButton.setToolTip("Play/Pause")
-        self.playButton.setIcon(generateIcon("media-playback-start"))
+        # Forward buttons
+        self.forwardFrameButton = self._create_button(
+            "+", "Next frame", style="font-weight: bold")
+        self.forward15SecondsButton = self._create_button(
+            "", "Jump forward 15 seconds", "media-seek-forward")
+        self.forward30SecondsButton = self._create_button(
+            " x2", "Jump forward 30 seconds", "media-seek-forward")
 
-        self.stopButton = QPushButton()
-        self.stopButton.setFixedSize(100, 36)
-        self.stopButton.setToolTip("Stop")
-        self.stopButton.setIcon(generateIcon("media-playback-stop"))
+    def _create_button(self, text="", tooltip="", icon_name=None, style=None):
+        """Create a button with standard properties."""
+        button = QPushButton(text)
+        button.setFixedSize(100, 36)
+        button.setToolTip(tooltip)
+        if icon_name:
+            button.setIcon(generateIcon(icon_name))
+        if style:
+            button.setStyleSheet(f"QPushButton {{ {style} }}")
+        return button
 
-        self.forwardFrameButton = QPushButton("+")
-        self.forwardFrameButton.setFixedSize(100, 36)
-        self.forwardFrameButton.setToolTip("Next frame")
-        self.forwardFrameButton.setStyleSheet(
-            "QPushButton { font-weight: bold; } ")
-
-        self.forward15SecondsButton = QPushButton()
-        self.forward15SecondsButton.setFixedSize(100, 36)
-        self.forward15SecondsButton.setToolTip("Jump forward 15 seconds")
-        self.forward15SecondsButton.setIcon(
-            generateIcon("media-seek-forward"))
-
-        self.forward30SecondsButton = QPushButton(" x2")
-        self.forward30SecondsButton.setFixedSize(100, 36)
-        self.forward30SecondsButton.setToolTip("Jump forward 30 seconds")
-        self.forward30SecondsButton.setIcon(
-            generateIcon("media-seek-forward"))
-
-        # Screenshot button
-        self.screenshotButton = QPushButton(
-            " Screenshot")  # Added space before text
+    def create_screenshot_button(self):
+        """Create and configure the screenshot button."""
+        self.screenshotButton = QPushButton(" Screenshot")
         self.screenshotButton.setFixedSize(120, 36)
         self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")
         self.screenshotButton.setShortcut("Ctrl+S")
-        # https://specifications.freedesktop.org/icon-naming-spec/latest/
         self.screenshotButton.setIcon(generateIcon("camera-photo", True))
         self.screenshotButton.setStyleSheet(
-            "QPushButton { background-color: #678dc6; padding-left: 5px; } QPushButton QToolTip { background-color: none; }")
+            "QPushButton { background-color: #678dc6; padding-left: 5px; } "
+            "QPushButton QToolTip { background-color: none; }")
         self.screenshotButton.clicked.connect(self.take_screenshot)
 
-        # Connect button signals
+    def connect_button_signals(self):
+        """Connect all button signals to their respective slots."""
         self.back30SecondsButton.clicked.connect(
             lambda: self.seek_relative(-30000))
         self.back15SecondsButton.clicked.connect(
@@ -330,18 +410,22 @@ class VideoPlayer(QWidget):
         self.forward30SecondsButton.clicked.connect(
             lambda: self.seek_relative(30000))
 
-        # Add buttons to layout in the desired sequence
-        controlsLayout.addWidget(self.back30SecondsButton)
-        controlsLayout.addWidget(self.back15SecondsButton)
-        controlsLayout.addWidget(self.backFrameButton)
-        controlsLayout.addWidget(self.playButton)
-        controlsLayout.addWidget(self.stopButton)
-        controlsLayout.addWidget(self.forwardFrameButton)
-        controlsLayout.addWidget(self.forward15SecondsButton)
-        controlsLayout.addWidget(self.forward30SecondsButton)
-        controlsLayout.addWidget(self.screenshotButton)
+    def add_buttons_to_layout(self, layout):
+        """Add all buttons to the layout in sequence."""
+        buttons = [
+            self.back30SecondsButton,
+            self.back15SecondsButton,
+            self.backFrameButton,
+            self.playButton,
+            self.stopButton,
+            self.forwardFrameButton,
+            self.forward15SecondsButton,
+            self.forward30SecondsButton,
+            self.screenshotButton
+        ]
 
-        parent_layout.addLayout(controlsLayout)
+        for button in buttons:
+            layout.addWidget(button)
 
     def add_upscale_and_crop_controls(self, parent_layout):
         """Add upscale, crop controls, and volume in the same line."""
@@ -374,7 +458,6 @@ class VideoPlayer(QWidget):
 
         # Add crop checkbox
         self.cropCheckbox = QCheckBox("Crop Image")
-        self.allowCrop = False
         self.cropCheckbox.setChecked(self.allowCrop)
         self.cropCheckbox.stateChanged.connect(self.toggle_crop)
         controls_layout.addWidget(self.cropCheckbox)
@@ -498,22 +581,23 @@ class VideoPlayer(QWidget):
 
         try:
             # Handle cropping if enabled
-            if hasattr(self, 'allowCrop') and self.allowCrop:
+            if self.allowCrop:
                 crop_dialog = CropDialog(str(processing_path), self)
                 if crop_dialog.exec_() == QDialog.Accepted:
                     processing_path = crop_dialog.get_result_path()
                     if not processing_path:
-                        raise Exception("Cropping failed")
+                        raise VideoProcessingError("Cropping failed")
 
             # Handle upscaling based on selected option
-            selected_model = get_available_models(
-            )[self.upscale_combo.currentIndex()]
+            selected_index = self.upscale_combo.currentIndex()
+            selected_model = get_available_models()[selected_index]
 
             if selected_model.id != "no_upscale":
                 # Read the image to upscale
                 img = cv2.imread(str(processing_path))
                 if img is None:
-                    raise Exception("Failed to load image for upscaling")
+                    raise VideoProcessingError(
+                        "Failed to load image for upscaling")
 
                 # Now we'll ask for the final save location
                 default_filename = f"enhanced_screenshot_{current_position}.png"
@@ -542,8 +626,7 @@ class VideoPlayer(QWidget):
                 self.upscale_thread.progress.connect(progress.setValue)
                 self.upscale_thread.finished.connect(
                     lambda result: self.handle_upscale_finished(
-                        result, final_path, selected_model.id, selected_model.scale, progress
-                    )
+                        result, final_path, selected_model.id, selected_model.scale, progress)
                 )
                 self.upscale_thread.error.connect(
                     lambda err: self.handle_upscale_error(err, progress)
@@ -588,9 +671,15 @@ class VideoPlayer(QWidget):
                 if final_path:
                     shutil.copy2(temp_screenshot, final_path)
 
-        except Exception as e:
+        except VideoProcessingError as e:
             QMessageBox.critical(
-                self, "Error", f"Failed to process image: {str(e)}")
+                self, "Error", str(e))
+        except UpscaleError as e:
+            QMessageBox.critical(
+                self, "Upscaling Error", str(e))
+        except IOError as e:
+            QMessageBox.critical(
+                self, "File Error", f"Failed to process image: {str(e)}")
         finally:
             # Cleanup temporary files
             if temp_screenshot != processing_path:
@@ -621,7 +710,7 @@ class VideoPlayer(QWidget):
         event.accept()
 
     def toggle_crop(self, state):
-        """Toggle crop functionality"""
+        """Toggle crop functionality."""
         self.allowCrop = bool(state)
 
     def seek_relative(self, ms):
@@ -697,14 +786,16 @@ class VideoPlayer(QWidget):
             progress_dialog.close()
 
             if result is None:
-                raise Exception("Upscaling failed: No output received")
+                raise UpscaleError("Upscaling failed: No output received")
 
             # Generate output filename
             base_path = os.path.splitext(processing_path)[0]
             output_path = f"{base_path}_{method}_{scale}x.png"
 
             # Save the upscaled image
-            cv2.imwrite(output_path, result)
+            if not cv2.imwrite(output_path, result):
+                raise VideoProcessingError(
+                    f"Failed to save image to {output_path}")
 
             # Show success message
             QMessageBox.information(
@@ -713,10 +804,16 @@ class VideoPlayer(QWidget):
                 f"Upscaled image saved:\n{output_path}"
             )
 
-        except Exception as e:
+        except (UpscaleError, VideoProcessingError) as e:
             QMessageBox.critical(
                 self,
                 "Error",
+                str(e)
+            )
+        except (IOError, OSError) as e:
+            QMessageBox.critical(
+                self,
+                "File Error",
                 f"Failed to save upscaled image: {str(e)}"
             )
 
