@@ -4,37 +4,62 @@ A powerful desktop application for processing, enhancing, and manipulating image
 
 ## 🌟 Features
 
+### Video Player
+- Professional-grade video playback with frame-accurate navigation
+- Frame-by-frame navigation with keyboard shortcuts
+- Advanced screenshot capabilities with AI upscaling
+- Multiple playback speeds and volume control
+- Keyboard shortcuts for efficient navigation:
+  - Left/Right: Frame by frame
+  - Shift + Left/Right: Second jumps
+  - Ctrl + Left/Right: Minute jumps
+
 ### Image Processing
-- Advanced AI-powered image upscaling using ESRGAN/Real-ESRGAN
-- Basic image operations (resize, crop, filter)
+- Advanced AI-powered image upscaling using multiple models:
+  - Real-ESRGAN (2x and 4x)
+  - SwinIR (2x and 4x)
+  - ESRGAN variants for general and anime content
+- Traditional upscaling methods:
+  - Bicubic (2x, 3x, 4x)
+  - Lanczos (2x, 3x, 4x)
+- Interactive image cropping with aspect ratio control
 - Batch processing capabilities
 - Support for multiple image formats
 
 ### Video Processing
 - Real-time video playback and processing
-- Video upscaling and enhancement
-- Frame interpolation
+- High-quality screenshot capture
+- Frame-accurate navigation
 - Multiple format support (MP4, AVI, MKV)
 
 ### AI Enhancement
-- Super-resolution upscaling
-- Noise reduction and artifact removal
-- GPU acceleration support
-- Integrated pre-trained models
+- Multiple AI models for different use cases:
+  - General purpose upscaling
+  - Anime/illustration optimization
+  - Lightweight processing options
+- GPU acceleration support (CUDA and MPS)
+- Integrated progress tracking
+- Memory-efficient processing
 
 ## 🛠️ Technology Stack
 
-- **GUI Framework**: PyQt/PySide
-- **Image Processing**: OpenCV, Pillow, scikit-image
-- **Video Processing**: OpenCV, moviepy, imageio
-- **AI/ML**: TensorFlow, PyTorch, ONNX
-- **Performance**: NumPy, Dask, Numba
-- **Packaging**: PyInstaller
+- **GUI Framework**: PyQt5
+- **Image Processing**: OpenCV, Pillow
+- **Video Processing**: OpenCV, PyQt5 Multimedia
+- **AI/ML**: 
+  - TensorFlow
+  - PyTorch
+  - basicsr
+  - Real-ESRGAN
+  - SwinIR
+- **Utilities**: NumPy
+- **Temp File Management**: Custom implementation
 
 ## 📋 Requirements
 
 - Python 3.10+
 - CUDA-compatible GPU (recommended for AI processing)
+- Apple Silicon MPS support (for Mac M1/M2)
 - FFmpeg (for video processing)
 
 ## 🚀 Installation
@@ -55,6 +80,7 @@ source venv/bin/activate # On Windows: venv\Scripts\activate
 ```bash
 pip install -r requirements.txt
 ```
+
 ## 💻 Usage
 
 Run the application:
@@ -64,48 +90,48 @@ python main.py
 
 ### Project Structure
 
+```
 ├── main.py
 ├── src/
-│ ├── app.py
-│ ├── gui/
-│ │ ├── main_window.py
-│ │ ├── video_player.py
-│ │ ├── download_dialog.py
-│ │ ├── crop_dialog.py
-│ │ └── upscale_dialog.py
-│ └── processing/
-│ ├── image_processing.py
-│ └── ai_upscaling.py
+│   ├── app.py
+│   ├── gui/
+│   │   ├── main_window.py      # Main application window
+│   │   ├── video_player.py     # Video playback component
+│   │   ├── download_dialog.py  # Video download interface
+│   │   ├── crop_dialog.py      # Image cropping interface
+│   │   ├── upscale_dialog.py   # AI upscaling interface
+│   │   └── resize_dialog.py    # Image resizing interface
+│   ├── processing/
+│   │   └── ai_upscaling.py     # AI enhancement implementation
+│   └── utils/
+│       ├── icon_utils.py       # Icon management
+│       └── temp_file_manager.py # Temporary file handling
 ```
 
-## 🔧 Configuration
+## 🔧 Key Features in Detail
 
-The application settings can be configured through the GUI interface or by modifying the configuration files:
+### Video Player
+- Frame-accurate navigation with keyboard shortcuts
+- Multiple playback speeds
+- Screenshot capability with AI enhancement
+- Volume control and mute option
+- Progress bar with time display
 
-- AI model settings
-- Processing parameters
-- Output preferences
-- Performance options
-
-## 🎯 Features in Detail
-
-### Image Upscaling
-- Support for multiple AI models
-- Custom upscaling factors
+### Image Processing
+- Multiple AI upscaling models:
+  - Real-ESRGAN variants
+  - SwinIR models
+  - ESRGAN specialized models
 - Batch processing with progress tracking
+- Interactive cropping with aspect ratio control
 - Preview functionality
 
-### Video Enhancement
-- Frame-by-frame processing
-- Real-time preview
-- Custom output settings
-- Progress monitoring
-
-### User Interface
-- Intuitive drag-and-drop interface
-- Live preview capabilities
-- Progress tracking for long operations
-- Multi-threaded processing for responsive UI
+### AI Upscaling
+- Automatic GPU detection (CUDA/MPS)
+- Memory-efficient processing
+- Multiple model support
+- Progress tracking
+- Error handling and recovery
 
 ## 🤝 Contributing
 
@@ -121,9 +147,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- ESRGAN/Real-ESRGAN teams for the AI models
+- Real-ESRGAN team for the AI models
+- SwinIR team for their implementation
+- PyQt community
 - OpenCV community
-- PyQt/PySide developers
 - All contributors and users of this project
 
 ## 📞 Support
