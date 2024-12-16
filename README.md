@@ -9,10 +9,6 @@ A powerful desktop application for processing, enhancing, and manipulating image
 - Frame-by-frame navigation with keyboard shortcuts
 - Advanced screenshot capabilities with AI upscaling
 - Multiple playback speeds and volume control
-- Keyboard shortcuts for efficient navigation:
-  - Left/Right: Frame by frame
-  - Shift + Left/Right: Second jumps
-  - Ctrl + Left/Right: Minute jumps
 
 ### Image Processing
 - Advanced AI-powered image upscaling using multiple models:
