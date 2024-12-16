@@ -1,3 +1,10 @@
+"""MainWindow - Primary Application Window for Multimedia Assistant
+
+This module implements the main application window that serves as the central hub for all multimedia
+operations and user interactions. It integrates various components including video playback,
+file management, and media processing features.
+"""
+import os
 from PyQt5.QtWidgets import (
     QMainWindow,
     QWidget,
@@ -10,92 +17,31 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
 )
 from PyQt5.QtCore import QStandardPaths
+
 from .video_player import VideoPlayer
 from .download_dialog import DownloadDialog
 from .upscale_dialog import UpscaleDialog
 from .resize_dialog import ResizeDialog
 from ..utils.icon_utils import generateIcon
-import os
 
 
 class MainWindow(QMainWindow):
     """
     MainWindow - Primary Application Window for Multimedia Assistant
 
-    This module implements the main application window that serves as the central hub for all multimedia
-    operations and user interactions. It integrates various components including video playback,
-    file management, and media processing features.
-
-    Key Features:
-    - Integrated video player with AI enhancement capabilities
-    - File browser for media organization and access
-    - Video download functionality from online platforms
-    - Batch image upscaling with AI support
-    - Intuitive menu system for application control
-
-    Architecture:
-    1. Layout Components:
-        - Split view design with file browser and video player
-        - Responsive layout with adjustable proportions (1:4 ratio)
-        - Integrated toolbar for common operations
-
-    2. File Management:
-        - Tree-based file browser for media navigation
-        - Filtered view showing only supported video formats
-        - Double-click functionality for quick video loading
-        - Automatic output directory management
-
-    3. Media Operations:
-        - Video downloading with progress tracking
-        - Batch upscaling for images and screenshots
-        - Integrated video player with AI enhancement
-        - File format support: MP4, AVI, MKV, MOV
-
-    4. Menu System:
-        - Application control (Exit)
-        - File operations (Open Video)
-        - Future extensibility for additional features
-
-    Technical Implementation:
-    - Uses QMainWindow as the foundation for the application window
-    - Implements custom file system model for media filtering
-    - Manages component communication and state
-    - Handles file system operations and directory structure
-
-    Directory Structure:
-    - /data: Storage for downloaded and imported videos
-    - /output: Destination for processed media files
-    - /models: Storage for AI model weights
-
-    Example Usage:
-        app = QApplication(sys.argv)
-        main_window = MainWindow()
-        main_window.show()
-        sys.exit(app.exec_())
-
-    Dependencies:
-    - PyQt5: Core GUI framework
-    - Custom Components:
-        - VideoPlayer: Advanced video playback
-        - DownloadDialog: Video acquisition
-        - UpscaleDialog: Batch image processing
-        - CropDialog: Image cropping utility
-
-    Performance Considerations:
-    - Efficient file system monitoring
-    - Responsive UI during heavy operations
-    - Proper resource cleanup on exit
-    - Memory management for large media files
-
-    @see @Project Structure#main_window.py
-    @see @Project#Application Architecture
-    @see @Project#File Management
+    This class sets up the main window, including the video player, file browser, and various
+    dialogs for downloading, upscaling, and resizing media files.
     """
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Multimedia Assistant")
         self.resize(1200, 800)
+
+        # Initialize current_browser_path
+        self.current_browser_path = os.path.join(
+            QStandardPaths.writableLocation(QStandardPaths.MoviesLocation)
+        )
 
         # Create central widget and main layout
         central_widget = QWidget()
@@ -114,7 +60,7 @@ class MainWindow(QMainWindow):
             os.makedirs(output_dir)
         self.video_player.outputFolder = output_dir
 
-        # Create a container widget for file browser and download button
+        # Create a container widget for file browser and buttons
         file_browser_container = QWidget()
         file_browser_layout = QVBoxLayout(file_browser_container)
 
@@ -128,7 +74,8 @@ class MainWindow(QMainWindow):
         load_folder_button = QPushButton(" Load from folder")
         load_folder_button.setIcon(generateIcon("folder-open", True))
         load_folder_button.setStyleSheet(
-            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;"
+        )
         load_folder_button.clicked.connect(self.change_browser_folder)
         file_browser_layout.addWidget(load_folder_button)
 
@@ -136,7 +83,8 @@ class MainWindow(QMainWindow):
         download_button = QPushButton(" Download video")
         download_button.setIcon(generateIcon("document-save", True))
         download_button.setStyleSheet(
-            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;"
+        )
         download_button.clicked.connect(self.show_download_dialog)
         file_browser_layout.addWidget(download_button)
 
@@ -144,7 +92,8 @@ class MainWindow(QMainWindow):
         upscale_button = QPushButton(" Upscale batch")
         upscale_button.setIcon(generateIcon("zoom-fit-best", True))
         upscale_button.setStyleSheet(
-            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;"
+        )
         upscale_button.clicked.connect(self.show_upscale_dialog)
         file_browser_layout.addWidget(upscale_button)
 
@@ -152,7 +101,8 @@ class MainWindow(QMainWindow):
         resize_button = QPushButton(" Resize batch")
         resize_button.setIcon(generateIcon("view-fullscreen", True))
         resize_button.setStyleSheet(
-            "text-align: left; padding-left: 15px; width: 100%; height: 36px;")
+            "text-align: left; padding-left: 15px; width: 100%; height: 36px;"
+        )
         resize_button.clicked.connect(self.show_resize_dialog)
         file_browser_layout.addWidget(resize_button)
 
@@ -166,13 +116,9 @@ class MainWindow(QMainWindow):
         self.setup_menu_bar()
 
     def setup_file_browser(self):
+        """Set up the file browser with a filtered view for video files."""
         # Create file system model
         self.file_model = QFileSystemModel()
-
-        # Get default videos directory for the operating system
-        default_videos_path = QStandardPaths.writableLocation(
-            QStandardPaths.MoviesLocation)
-        self.current_browser_path = default_videos_path
 
         self.file_model.setRootPath(self.current_browser_path)
 
@@ -195,6 +141,7 @@ class MainWindow(QMainWindow):
         self.file_browser.doubleClicked.connect(self.on_file_double_clicked)
 
     def on_file_double_clicked(self, index):
+        """Handle double-click events on the file browser to load videos."""
         # Get the full path of the selected file
         file_path = self.file_model.filePath(index)
 
@@ -224,38 +171,38 @@ class MainWindow(QMainWindow):
         file_menu.addAction(open_video_action)
 
     def load_video(self):
-        """Open file dialog and load selected video"""
+        """Open file dialog and load selected video."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Open Video",
             self.video_player.get_data_directory(),
-            "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)"
+            "Video Files (*.mp4 *.avi *.mkv *.mov);;All Files (*)",
         )
         if file_path:
             self.video_player.load_video(file_path)
 
     def show_download_dialog(self):
-        """Show the download dialog when download button is clicked"""
+        """Show the download dialog when download button is clicked."""
         dialog = DownloadDialog(self)
         dialog.exec_()
 
     def show_upscale_dialog(self):
-        """Show the upscale dialog when upscale batch button is clicked"""
+        """Show the upscale dialog when upscale batch button is clicked."""
         dialog = UpscaleDialog(self)
         dialog.exec_()
 
     def show_resize_dialog(self):
-        """Show the resize dialog when resize batch button is clicked"""
+        """Show the resize dialog when resize batch button is clicked."""
         dialog = ResizeDialog(self)
         dialog.exec_()
 
     def change_browser_folder(self):
-        """Allow user to select a new folder to browse"""
+        """Allow user to select a new folder to browse."""
         new_folder = QFileDialog.getExistingDirectory(
             self,
             "Select Folder",
             self.current_browser_path,
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
 
         if new_folder:
