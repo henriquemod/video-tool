@@ -12,17 +12,7 @@ from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
 from basicsr.utils.registry import ARCH_REGISTRY
 from realesrgan import RealESRGANer
-
-class UpscalingError(Exception):
-    """Base exception for upscaling errors"""
-
-
-class ModelError(UpscalingError):
-    """Exception raised for errors related to model loading or processing"""
-
-
-class ProcessingError(UpscalingError):
-    """Exception raised for errors during image processing"""
+from ..exceptions import UpscaleError
 
 # Model URLs for SwinIR and Real-ESRGAN
 MODEL_URLS = {
@@ -101,7 +91,8 @@ def get_available_models() -> List[UpscaleModel]:
         UpscaleModel("realesrgan_4x_plus_netd", "Real-ESRGAN (4x+ netD)", 4),
         UpscaleModel("realesrgan_2x_plus_netd", "Real-ESRGAN (2x+ netD)", 2),
         UpscaleModel("realesrgan_anime_4x", "Real-ESRGAN Anime (4x)", 4),
-        UpscaleModel("realesrgan_anime_4x_netd", "Real-ESRGAN Anime (4x netD)", 4)
+        UpscaleModel("realesrgan_anime_4x_netd",
+                     "Real-ESRGAN Anime (4x netD)", 4)
     ]
 
 
@@ -165,19 +156,20 @@ class AIUpscaler:
                 return self.upscale_swinir(img, scale, progress_callback)
             if "bicubic" in model_id:
                 return cv2.resize(img, None, fx=scale, fy=scale,
-                                interpolation=cv2.INTER_CUBIC)
+                                  interpolation=cv2.INTER_CUBIC)
             if "lanczos" in model_id:
                 return cv2.resize(img, None, fx=scale, fy=scale,
-                                interpolation=cv2.INTER_LANCZOS4)
+                                  interpolation=cv2.INTER_LANCZOS4)
             if model_id == "no_upscale":
                 return img
 
             raise ValueError(f"Unsupported upscaling method: {model_id}")
 
         except ValueError as e:
-            raise ModelError(f"Invalid model configuration: {str(e)}") from e
+            raise UpscaleError(
+                f"Invalid model configuration: {str(e)}") from e
         except Exception as e:
-            raise ProcessingError(f"Upscaling failed: {str(e)}") from e
+            raise UpscaleError(f"Upscaling failed: {str(e)}") from e
 
     def cancel(self):
         """Cancel ongoing upscaling operation"""
@@ -241,7 +233,8 @@ class AIUpscaler:
             return output
 
         except Exception as e:
-            raise ProcessingError(f"Real-ESRGAN processing failed: {str(e)}") from e
+            raise UpscaleError(
+                f"Real-ESRGAN processing failed: {str(e)}") from e
 
     def upscale_swinir(self, img, scale, progress_callback):  # pylint: disable=unused-argument
         """Upscale image using SwinIR."""
@@ -302,4 +295,4 @@ class AIUpscaler:
             return output
 
         except Exception as e:
-            raise ProcessingError(f"SwinIR processing failed: {str(e)}") from e
+            raise UpscaleError(f"SwinIR processing failed: {str(e)}") from e
