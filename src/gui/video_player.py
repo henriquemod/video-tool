@@ -1,7 +1,12 @@
-import cv2
+"""
+Video player module for the multimedia assistant application.
+Provides functionality for video playback, frame extraction, and AI upscaling.
+"""
+
 import sys
 import os
 import shutil
+import cv2
 from PyQt5.QtCore import QStandardPaths
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QSlider,
@@ -10,13 +15,10 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal, QSize
-from PyQt5.QtGui import QIcon, QColor, QPainter
-from .crop_dialog import CropDialog
+from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
 
-import torch
-import numpy as np
-from src.processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
+from .crop_dialog import CropDialog
+from ..processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
 from ..utils.temp_file_manager import temp_manager
 from ..utils.icon_utils import generateIcon
 
