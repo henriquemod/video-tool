@@ -1,30 +1,76 @@
+"""
+Module for the Upscale Dialog GUI component.
+
+This module provides the user interface for batch image upscaling using AI-powered
+and classical methods. It allows users to select images, choose upscaling methods,
+track progress, and handle the upscaling process in a separate thread to maintain
+a responsive interface.
+"""
+
+from pathlib import Path
+import os
+
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
-    QFileDialog, QProgressDialog
+    QFileDialog
 )
-from PyQt5.QtCore import QStandardPaths
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-import os
+from PyQt5.QtCore import QStandardPaths, QThread, pyqtSignal
 import cv2
-from pathlib import Path
+
 from ..processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
 
 
 class ImageItem:
-    def __init__(self, path):
+    """
+    Container for image processing information.
+
+    Attributes:
+        path (str): Source image path.
+    """
+
+    def __init__(self, path: str):
+        """
+        Initialize an ImageItem instance.
+
+        Args:
+            path (str): The file path of the image.
+        """
         self.path = path
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """
+        Return the name of the image file.
+
+        Returns:
+            str: Name of the image file.
+        """
         return str(Path(self.path).name)
 
 
 class UpscaleThread(QThread):
+    """
+    Background worker for upscaling operations.
+
+    Signals:
+        progress(int): Processing progress percentage.
+        image_progress(int, int): Current and total number of images processed.
+        finished(bool, str): Success status and message.
+    """
+
     progress = pyqtSignal(int)
     image_progress = pyqtSignal(int, int)
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, images, output_dir, model_id: str):
+    def __init__(self, images: list, output_dir: str, model_id: str):
+        """
+        Initialize the UpscaleThread.
+
+        Args:
+            images (list): List of ImageItem instances.
+            output_dir (str): Directory to save upscaled images.
+            model_id (str): Identifier for the AI model to use.
+        """
         super().__init__()
         self.images = images
         self.output_dir = output_dir
@@ -32,6 +78,9 @@ class UpscaleThread(QThread):
         self.upscaler = AIUpscaler()
 
     def run(self):
+        """
+        Execute the upscaling process in a separate thread.
+        """
         try:
             total_images = len(self.images)
             for i, image in enumerate(self.images, 1):
@@ -44,14 +93,16 @@ class UpscaleThread(QThread):
                 # Read image
                 img = cv2.imread(image.path)
                 if img is None:
-                    raise Exception(f"Failed to load image: {image.path}")
+                    raise FileNotFoundError(
+                        f"Failed to load image: {image.path}")
 
                 # Use AIUpscaler instance for upscaling
                 upscaled = self.upscaler.upscale(
                     img,
                     self.model_id,
-                    progress_callback=lambda p: self.progress.emit(
-                        int((i-1)/total_images*100 + p/total_images))
+                    progress_callback=lambda p, current=i: self.progress.emit(
+                        int((current - 1) / total_images * 100 + p / total_images)
+                    )
                 )
 
                 # Save output
@@ -59,144 +110,58 @@ class UpscaleThread(QThread):
                     self.output_dir,
                     f"upscaled_{Path(image.path).name}"
                 )
-                cv2.imwrite(output_path, upscaled)
+                success = cv2.imwrite(output_path, upscaled)
+                if not success:
+                    raise IOError(
+                        f"Failed to save upscaled image: {output_path}")
 
                 # Update progress
                 progress = i / total_images * 100
                 self.progress.emit(int(progress))
 
             self.finished.emit(
-                True, f"Successfully upscaled {total_images} images!")
-        except Exception as e:
+                True, f"Successfully upscaled {total_images} images!"
+            )
+        except (FileNotFoundError, IOError) as e:
             self.finished.emit(False, str(e))
+        except RuntimeError as e:
+            # Handle runtime-specific errors from AIUpscaler
+            self.finished.emit(False, f"Runtime error: {str(e)}")
+        except Exception as e:
+            # Handle any other unexpected exceptions
+            self.finished.emit(
+                False, f"An unexpected error occurred: {str(e)}")
 
 
 class UpscaleDialog(QDialog):
     """
-    UpscaleDialog - Batch Image Upscaling Interface
+    Batch Image Upscaling Interface.
 
-    This module implements a sophisticated batch processing interface for upscaling images
-    using various methods including AI-powered models. It provides a user-friendly way to
-    process multiple images with advanced upscaling algorithms.
-
-    Key Features:
-    - Batch processing support
-    - Multiple upscaling methods (AI and classical)
-    - Progress tracking and cancellation
-    - Configurable output options
-    - GPU acceleration support
-    - Drag-and-drop file support
-
-    Components:
-    1. Image Queue Management:
-        - List-based interface for multiple images
-        - Add/Remove functionality
-        - Batch file selection
-        - File validation and filtering
-        - Drag-and-drop support
-
-    2. Upscaling Options:
-        - Method Selection:
-            * Bicubic (Classical)
-            * Lanczos (Classical)
-            * Real-ESRGAN (AI)
-            * SwinIR (AI)
-        - Scale Factors:
-            * 2x upscaling
-            * 4x upscaling
-        - Quality settings
-        - Output format options
-
-    3. Progress Tracking:
-        - Individual file progress
-        - Overall batch progress
-        - Time estimation
-        - Cancellation support
-        - Status updates
-
-    4. GPU Acceleration:
-        - Automatic GPU detection
-        - CUDA support for NVIDIA
-        - MPS support for Apple Silicon
-        - Fallback to CPU processing
-        - Performance optimization
-
-    Technical Implementation:
-    - Multi-threaded processing
-    - Memory-efficient batch handling
-    - GPU memory management
-    - Progress reporting system
-
-    Classes:
-        ImageItem:
-            Container for image processing information
-            Attributes:
-                - path: Source image path
-                - status: Processing status
-
-        UpscaleThread(QThread):
-            Background worker for upscaling operations
-            Signals:
-                - progress(int): Processing progress
-                - image_progress(int, int): Current/total images
-                - finished(bool, str): Success status and message
-
-        UpscaleDialog(QDialog):
-            Main dialog interface for batch processing
-            Features:
-                - Image queue management
-                - Method selection
-                - Progress visualization
-                - Output handling
-
-    Dependencies:
-    - PyQt5: GUI framework
-    - torch: AI processing backend
-    - opencv-python: Image processing
-    - numpy: Numerical operations
-    - basicsr: AI model architectures
-    - realesrgan: Real-ESRGAN implementation
-
-    Example Usage:
-        dialog = UpscaleDialog(parent)
-        dialog.exec_()
-
-    Performance Considerations:
-    - Batch size management
-    - Memory usage monitoring
-    - GPU memory optimization
-    - Efficient progress updates
-    - Resource cleanup
-
-    Error Handling:
-    - Invalid image files
-    - GPU memory exhaustion
-    - Processing failures
-    - Output path issues
-    - Cancellation handling
-
-    Output Management:
-    - Automatic naming scheme
-    - Directory structure
-    - Format preservation
-    - Quality settings
-    - Metadata handling
-
-    @see @Project Structure#upscale_dialog.py
-    @see @Project#Batch Processing
-    @see @Project#AI Enhancement
+    This dialog provides a user-friendly interface for batch upscaling images using various
+    AI-powered and classical methods. It supports features like progress tracking, GPU
+    acceleration, and configurable output options.
     """
 
     def __init__(self, parent=None):
+        """
+        Initialize the UpscaleDialog.
+
+        Args:
+            parent (QWidget, optional): The parent widget. Defaults to None.
+        """
         super().__init__(parent)
         self.setWindowTitle("Batch Image Upscaler")
         self.setMinimumWidth(500)
         self.setMinimumHeight(400)
 
         self.images = []
+        self.upscale_thread = None
         self.setup_ui()
 
     def setup_ui(self):
+        """
+        Set up the user interface components.
+        """
         layout = QVBoxLayout()
 
         # Path input
@@ -262,6 +227,9 @@ class UpscaleDialog(QDialog):
         self.upscale_button.clicked.connect(self.upscale_images)
 
     def browse_images(self):
+        """
+        Open a file dialog to select images and add them to the list.
+        """
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
             "Select Images",
@@ -272,7 +240,8 @@ class UpscaleDialog(QDialog):
             for path in file_paths:
                 if not os.path.isfile(path):
                     QMessageBox.warning(
-                        self, "Error", f"File not found: {path}")
+                        self, "Error", f"File not found: {path}"
+                    )
                     continue
 
                 image = ImageItem(path)
@@ -280,6 +249,9 @@ class UpscaleDialog(QDialog):
                 self.image_list.addItem(QListWidgetItem(str(image)))
 
     def add_image(self):
+        """
+        Add a single image to the list based on the input path.
+        """
         path = self.path_input.text().strip()
         if not path:
             QMessageBox.warning(self, "Error", "Please enter an image path")
@@ -295,13 +267,19 @@ class UpscaleDialog(QDialog):
         self.path_input.clear()
 
     def remove_image(self):
+        """
+        Remove the selected image from the list.
+        """
         current_row = self.image_list.currentRow()
         if current_row >= 0:
             self.image_list.takeItem(current_row)
             self.images.pop(current_row)
 
     def handle_cancel(self):
-        if hasattr(self, 'upscale_thread') and self.upscale_thread.isRunning():
+        """
+        Handle the cancellation of the upscaling process and close the dialog.
+        """
+        if self.upscale_thread and self.upscale_thread.isRunning():
             self.upscale_thread.terminate()
             self.upscale_thread.wait()
             self.progress_bar.hide()
@@ -310,9 +288,13 @@ class UpscaleDialog(QDialog):
         self.reject()
 
     def upscale_images(self):
+        """
+        Initiate the upscaling process for the selected images.
+        """
         if not self.images:
             QMessageBox.warning(
-                self, "Error", "Please add at least one image to upscale")
+                self, "Error", "Please add at least one image to upscale"
+            )
             return
 
         # Ask user for save location
@@ -335,10 +317,12 @@ class UpscaleDialog(QDialog):
         self.browse_button.setEnabled(False)
 
         # Create and start upscale thread with user-selected directory
+        selected_model = get_available_models(
+        )[self.method_combo.currentIndex()]
         self.upscale_thread = UpscaleThread(
             self.images,
             output_dir,
-            get_available_models()[self.method_combo.currentIndex()].id
+            selected_model.id
         )
         self.upscale_thread.progress.connect(self.progress_bar.setValue)
         self.upscale_thread.image_progress.connect(self.update_progress_label)
@@ -347,10 +331,24 @@ class UpscaleDialog(QDialog):
         # Start upscaling
         self.upscale_thread.start()
 
-    def update_progress_label(self, current, total):
+    def update_progress_label(self, current: int, total: int):
+        """
+        Update the progress label with current and total image counts.
+
+        Args:
+            current (int): Current image number.
+            total (int): Total number of images.
+        """
         self.progress_label.setText(f"{current}/{total}")
 
-    def upscale_finished(self, success, message):
+    def upscale_finished(self, success: bool, message: str):
+        """
+        Handle the completion of the upscaling process.
+
+        Args:
+            success (bool): Indicates if the process was successful.
+            message (str): Success or error message.
+        """
         self.progress_bar.hide()
         self.progress_label.hide()
         self.upscale_button.setEnabled(True)
@@ -362,4 +360,5 @@ class UpscaleDialog(QDialog):
             self.accept()
         else:
             QMessageBox.critical(
-                self, "Error", f"Failed to upscale images: {message}")
+                self, "Error", f"Failed to upscale images: {message}"
+            )
