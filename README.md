@@ -2,6 +2,8 @@
 
 A powerful desktop application for processing, enhancing, and manipulating images and videos using state-of-the-art AI models and traditional processing techniques.
 
+![Screenshot From 2024-12-15 21-56-26](https://github.com/user-attachments/assets/41f40562-e22d-4b1c-8e4a-3f8674f57a53)
+
 ## 🌟 Features
 
 ### Video Player
