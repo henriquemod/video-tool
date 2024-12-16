@@ -114,10 +114,6 @@ class UpscaleThread(QThread):
         except UpscaleError as e:
             # Handle custom upscaling errors
             self.error.emit(str(e))
-        except Exception as e:
-            # Log unexpected errors but present a user-friendly message
-            print(f"Unexpected error during upscaling: {str(e)}")
-            self.error.emit("An unexpected error occurred during upscaling")
 
     def cancel(self):
         """Cancel the upscaling operation."""
@@ -556,120 +552,26 @@ class VideoPlayer(QWidget):
 
     def take_screenshot(self):
         """Captures the current frame as a high-quality screenshot."""
-        # Get the current position of the video
-        current_position = self.mediaPlayer.position()
-
-        # Set the video capture to the current position
-        self.cap.set(cv2.CAP_PROP_POS_MSEC, current_position)
-
-        # Read the current frame
-        ret, frame = self.cap.read()
-        if not ret:
-            QMessageBox.critical(
-                self, "Error", "Failed to capture frame from video.")
-            return
-
-        # Generate temp path for original screenshot
-        temp_screenshot = temp_manager.get_temp_path(
-            prefix="screenshot_", suffix=".png")
-
-        # Save the original screenshot to temp location
-        cv2.imwrite(str(temp_screenshot), frame)
-
-        processing_path = temp_screenshot
-        final_path = None
-
         try:
-            # Handle cropping if enabled
-            if self.allowCrop:
-                crop_dialog = CropDialog(str(processing_path), self)
-                if crop_dialog.exec_() == QDialog.Accepted:
-                    processing_path = crop_dialog.get_result_path()
-                    if not processing_path:
-                        raise VideoProcessingError("Cropping failed")
+            # Capture and save the screenshot
+            frame, current_position = self.capture_frame()
+            temp_screenshot = self.save_temp_screenshot(frame)
 
-            # Handle upscaling based on selected option
-            selected_index = self.upscale_combo.currentIndex()
-            selected_model = get_available_models()[selected_index]
+            # Process the screenshot (crop and upscale)
+            processing_path = self.process_screenshot(temp_screenshot)
 
-            if selected_model.id != "no_upscale":
-                # Read the image to upscale
-                img = cv2.imread(str(processing_path))
-                if img is None:
-                    raise VideoProcessingError(
-                        "Failed to load image for upscaling")
+            # Save the final screenshot
+            final_path = self.save_final_screenshot(
+                processing_path, current_position)
 
-                # Now we'll ask for the final save location
-                default_filename = f"enhanced_screenshot_{current_position}.png"
-                final_path, _ = QFileDialog.getSaveFileName(
-                    self,
-                    "Save Enhanced Screenshot",
-                    os.path.join(QStandardPaths.writableLocation(
-                        QStandardPaths.PicturesLocation), default_filename),
-                    "PNG Images (*.png);;All Files (*)"
+            # Cleanup temporary files
+            self.cleanup_temporary_files(temp_screenshot, processing_path)
+
+            # Show success message if file was saved
+            if final_path and os.path.exists(final_path):
+                QMessageBox.information(
+                    self, "Success", f"Image saved: {final_path}"
                 )
-
-                if not final_path:  # User cancelled
-                    return
-
-                # Create progress dialog
-                progress = QProgressDialog(
-                    "Upscaling image...", "Cancel", 0, 100, self)
-                progress.setWindowModality(Qt.WindowModal)
-                progress.setAutoClose(True)
-                progress.setAutoReset(True)
-
-                # Create and configure upscale thread
-                self.upscale_thread = UpscaleThread(img, selected_model.id)
-
-                # Connect signals
-                self.upscale_thread.progress.connect(progress.setValue)
-                self.upscale_thread.finished.connect(
-                    lambda result: self.handle_upscale_finished(
-                        result, final_path, selected_model.id, selected_model.scale, progress)
-                )
-                self.upscale_thread.error.connect(
-                    lambda err: self.handle_upscale_error(err, progress)
-                )
-
-                # Connect cancel button
-                progress.canceled.connect(self.upscale_thread.cancel)
-
-                # Start thread
-                self.upscale_thread.start()
-
-                # Show progress dialog
-                progress.exec_()
-                return
-
-            # If no upscaling, but cropping was done, save the cropped image
-            elif processing_path != temp_screenshot:
-                # Ask for save location for cropped image
-                default_filename = f"cropped_screenshot_{current_position}.png"
-                final_path, _ = QFileDialog.getSaveFileName(
-                    self,
-                    "Save Cropped Screenshot",
-                    os.path.join(QStandardPaths.writableLocation(
-                        QStandardPaths.PicturesLocation), default_filename),
-                    "PNG Images (*.png);;All Files (*)"
-                )
-
-                if final_path:
-                    shutil.copy2(processing_path, final_path)
-
-            # If no processing was done, save original screenshot
-            else:
-                default_filename = f"screenshot_{current_position}.png"
-                final_path, _ = QFileDialog.getSaveFileName(
-                    self,
-                    "Save Screenshot",
-                    os.path.join(QStandardPaths.writableLocation(
-                        QStandardPaths.PicturesLocation), default_filename),
-                    "PNG Images (*.png);;All Files (*)"
-                )
-
-                if final_path:
-                    shutil.copy2(temp_screenshot, final_path)
 
         except VideoProcessingError as e:
             QMessageBox.critical(
@@ -680,17 +582,170 @@ class VideoPlayer(QWidget):
         except IOError as e:
             QMessageBox.critical(
                 self, "File Error", f"Failed to process image: {str(e)}")
-        finally:
-            # Cleanup temporary files
-            if temp_screenshot != processing_path:
-                temp_manager.remove_temp_file(temp_screenshot)
-            if processing_path and processing_path != temp_screenshot:
-                temp_manager.remove_temp_file(processing_path)
 
-        # Show success message if file was saved
-        if final_path and os.path.exists(final_path):
-            QMessageBox.information(
-                self, "Success", f"Image saved: {final_path}")
+    def capture_frame(self):
+        """
+        Capture the current frame from the video.
+
+        Returns:
+            tuple: (frame image, current position in milliseconds)
+        """
+        # Get the current position of the video
+        current_position = self.mediaPlayer.position()
+
+        # Set the video capture to the current position
+        self.cap.set(cv2.CAP_PROP_POS_MSEC, current_position)
+
+        # Read the current frame
+        ret, frame = self.cap.read()
+        if not ret:
+            raise VideoProcessingError("Failed to capture frame from video.")
+
+        return frame, current_position
+
+    def save_temp_screenshot(self, frame):
+        """
+        Save the captured frame to a temporary file.
+
+        Args:
+            frame: The captured frame image.
+
+        Returns:
+            Path to the temporary screenshot.
+        """
+        # Generate temp path for original screenshot
+        temp_screenshot = temp_manager.get_temp_path(
+            prefix="screenshot_", suffix=".png")
+
+        # Save the original screenshot to temp location
+        cv2.imwrite(str(temp_screenshot), frame)
+
+        return temp_screenshot
+
+    def process_screenshot(self, processing_path):
+        """
+        Process the screenshot by handling cropping and upscaling.
+
+        Args:
+            processing_path (Path): Path to the temporary screenshot.
+
+        Returns:
+            Path to the processed screenshot.
+        """
+        # Handle cropping if enabled
+        if self.allowCrop:
+            crop_dialog = CropDialog(str(processing_path), self)
+            if crop_dialog.exec_() == QDialog.Accepted:
+                new_path = crop_dialog.get_result_path()
+                if not new_path:
+                    raise VideoProcessingError("Cropping failed.")
+                processing_path = new_path
+
+        # Handle upscaling based on selected option
+        selected_model = get_available_models(
+        )[self.upscale_combo.currentIndex()]
+        if selected_model.id != "no_upscale":
+            img = cv2.imread(str(processing_path))
+            if img is None:
+                raise VideoProcessingError(
+                    "Failed to load image for upscaling.")
+            self.start_upscaling_thread(img, selected_model)
+            # Upscaling will be handled asynchronously
+            raise VideoProcessingError("Upscaling in progress. Please wait.")
+
+        return processing_path
+
+    def start_upscaling_thread(self, img, selected_model):
+        """
+        Start the upscaling thread.
+
+        Args:
+            img: Image to upscale.
+            selected_model: Model selected for upscaling.
+        """
+        # Now we'll ask for the final save location
+        default_filename = f"enhanced_screenshot_{self.ms_to_time(self.mediaPlayer.position())}.png"
+        final_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Enhanced Screenshot",
+            os.path.join(QStandardPaths.writableLocation(
+                QStandardPaths.PicturesLocation), default_filename),
+            "PNG Images (*.png);;All Files (*)"
+        )
+
+        if not final_path:  # User cancelled
+            return
+
+        # Create progress dialog
+        progress = QProgressDialog(
+            "Upscaling image...", "Cancel", 0, 100, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setAutoClose(True)
+        progress.setAutoReset(True)
+
+        # Create and configure upscale thread
+        self.upscale_thread = UpscaleThread(img, selected_model.id)
+
+        # Connect signals
+        self.upscale_thread.progress.connect(progress.setValue)
+        self.upscale_thread.finished.connect(
+            lambda result: self._handle_upscale_finished(
+                result, final_path, progress)
+        )
+        self.upscale_thread.error.connect(
+            lambda err: self.handle_upscale_error(err, progress)
+        )
+
+        # Connect cancel button
+        progress.canceled.connect(self.upscale_thread.cancel)
+
+        # Start thread
+        self.upscale_thread.start()
+
+        # Show progress dialog
+        progress.exec_()
+
+    def save_final_screenshot(self, processing_path, current_position):
+        """
+        Save the final screenshot based on processing.
+
+        Args:
+            processing_path (Path): Path to the processed screenshot.
+            current_position (int): Current video position.
+
+        Returns:
+            Path to the final saved screenshot.
+        """
+        if processing_path.suffix == ".png":
+            default_filename = f"screenshot_{current_position}.png"
+        else:
+            default_filename = f"screenshot_{current_position}{processing_path.suffix}"
+
+        final_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Screenshot",
+            os.path.join(QStandardPaths.writableLocation(
+                QStandardPaths.PicturesLocation), default_filename),
+            "PNG Images (*.png);;All Files (*)"
+        )
+
+        if final_path:
+            shutil.copy2(processing_path, final_path)
+
+        return final_path
+
+    def cleanup_temporary_files(self, temp_screenshot, processing_path):
+        """
+        Cleanup temporary screenshot files.
+
+        Args:
+            temp_screenshot (Path): Path to the temporary original screenshot.
+            processing_path (Path): Path to the processed screenshot.
+        """
+        if temp_screenshot != processing_path:
+            temp_manager.remove_temp_file(temp_screenshot)
+        if processing_path and processing_path != temp_screenshot:
+            temp_manager.remove_temp_file(processing_path)
 
     def closeEvent(self, event):
         """
@@ -770,15 +825,13 @@ class VideoPlayer(QWidget):
         else:
             super().keyPressEvent(event)
 
-    def handle_upscale_finished(self, result, processing_path, method, scale, progress_dialog):
+    def _handle_upscale_finished(self, result, final_path, progress_dialog):
         """
         Handle the completion of the upscaling process.
 
         Args:
             result: The upscaled image
-            processing_path (str): Path of the input image
-            method (str): Upscaling method used
-            scale (int): Upscaling factor
+            final_path (str): Path where the image should be saved
             progress_dialog (QProgressDialog): Progress dialog to close
         """
         try:
@@ -788,20 +841,16 @@ class VideoPlayer(QWidget):
             if result is None:
                 raise UpscaleError("Upscaling failed: No output received")
 
-            # Generate output filename
-            base_path = os.path.splitext(processing_path)[0]
-            output_path = f"{base_path}_{method}_{scale}x.png"
-
             # Save the upscaled image
-            if not cv2.imwrite(output_path, result):
+            if not cv2.imwrite(final_path, result):
                 raise VideoProcessingError(
-                    f"Failed to save image to {output_path}")
+                    f"Failed to save image to {final_path}")
 
             # Show success message
             QMessageBox.information(
                 self,
                 "Success",
-                f"Upscaled image saved:\n{output_path}"
+                f"Upscaled image saved:\n{final_path}"
             )
 
         except (UpscaleError, VideoProcessingError) as e:
