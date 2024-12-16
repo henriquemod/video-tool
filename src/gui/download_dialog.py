@@ -1,38 +1,96 @@
+"""
+Download Dialog Module for Multimedia Assistant
+
+This module provides a sophisticated video download interface that supports multiple video sources
+and offers progress tracking. It utilizes yt-dlp as the backend for reliable video downloading
+with format selection and quality control.
+"""
+
+import os
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem, QFileDialog
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QStandardPaths
-import os
+from PyQt5.QtCore import QThread, pyqtSignal, QStandardPaths
+
+
 import yt_dlp
 
 
 class VideoItem:
+    """
+    Container class for video information.
+
+    Attributes:
+        provider (str): Source platform (e.g., YouTube).
+        url (str): Video URL.
+    """
+
     def __init__(self, provider, url):
+        """
+        Initialize a VideoItem instance.
+
+        Args:
+            provider (str): The video provider.
+            url (str): The URL of the video.
+        """
         self.provider = provider
         self.url = url
 
     def __str__(self):
+        """
+        Return a string representation of the VideoItem.
+
+        Returns:
+            str: Formatted string with provider and URL.
+        """
         return f"{self.provider}: {self.url}"
 
 
 class DownloadThread(QThread):
+    """
+    Background worker for download operations.
+
+    Signals:
+        progress(int): Download progress percentage.
+        video_progress(int, int): Current video index and total videos.
+        finished(bool, str): Success status and message.
+    """
+
     progress = pyqtSignal(int)
     video_progress = pyqtSignal(int, int)  # current video, total videos
     finished = pyqtSignal(bool, str)
 
     def __init__(self, videos, output_dir):
+        """
+        Initialize the DownloadThread.
+
+        Args:
+            videos (list): List of VideoItem instances to download.
+            output_dir (str): Directory where videos will be saved.
+        """
         super().__init__()
         self.videos = videos
         self.output_dir = output_dir
         self.current_video = 0
 
     def progress_hook(self, d):
-        if d['status'] == 'downloading':
-            p = d.get('downloaded_bytes', 0) / d.get('total_bytes', 1) * 100
+        """
+        Hook to report download progress.
+
+        Args:
+            d (dict): Dictionary containing download status and bytes information.
+        """
+        if d.get('status') == 'downloading':
+            downloaded = d.get('downloaded_bytes', 0)
+            total = d.get('total_bytes', 1)
+            p = downloaded / total * 100
             self.progress.emit(int(p))
 
     def run(self):
+        """
+        Execute the download process for each video.
+        """
         try:
             total_videos = len(self.videos)
             for i, video in enumerate(self.videos, 1):
@@ -40,7 +98,10 @@ class DownloadThread(QThread):
                 self.video_progress.emit(i, total_videos)
 
                 ydl_opts = {
-                    'format': 'bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'format': (
+                        'bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/'
+                        'best[ext=mp4]/best'
+                    ),
                     'outtmpl': os.path.join(self.output_dir, '%(title)s.%(ext)s'),
                     'progress_hooks': [self.progress_hook],
                     'merge_output_format': 'mp4',
@@ -60,126 +121,49 @@ class DownloadThread(QThread):
                     ydl.download([video.url])
 
             self.finished.emit(
-                True, f"Successfully downloaded {total_videos} videos!")
-        except Exception as e:
+                True, f"Successfully downloaded {total_videos} videos!"
+            )
+        except yt_dlp.utils.DownloadError as e:
             self.finished.emit(False, str(e))
+        except (OSError, IOError) as e:
+            # Handle file system related errors
+            self.finished.emit(False, f"File system error: {str(e)}")
+        except ValueError as e:
+            # Handle value-related errors
+            self.finished.emit(False, f"Value error: {str(e)}")
+        except RuntimeError as e:
+            # Handle runtime-specific errors
+            self.finished.emit(False, f"Runtime error: {str(e)}")
 
 
 class DownloadDialog(QDialog):
     """
-    DownloadDialog - Video Download Manager for Multimedia Assistant
+    Video Download Manager for Multimedia Assistant.
 
-    This module implements a sophisticated video download interface that supports multiple video sources
-    and provides progress tracking. It uses yt-dlp as its backend for reliable video downloading with
-    format selection and quality control.
-
-    Key Features:
-    - Multi-video download queue management
-    - Progress tracking for individual downloads
-    - Support for multiple video platforms
-    - High-quality video format selection
-    - Configurable output directory
-    - Cancel and resume capabilities
-
-    Components:
-    1. Download Queue:
-    - List-based interface for multiple video URLs
-    - Add/Remove functionality for queue management
-    - Visual feedback for queued items
-    - Support for batch processing
-
-    2. Progress Tracking:
-    - Individual progress bars for each download
-    - Overall progress indication
-    - Current/Total videos counter
-    - Real-time status updates
-
-    3. Format Handling:
-    - Automatic best quality selection
-    - Format preference configuration:
-        * Video: H.264/AVC codec
-        * Audio: AAC with 192k bitrate
-        * Container: MP4 with faststart
-    - Fallback options for compatibility
-
-    4. Error Management:
-    - Graceful error handling
-    - User feedback for failed downloads
-    - Retry capabilities
-    - Detailed error reporting
-
-    Technical Implementation:
-    - Multi-threaded download processing
-    - Signal-based progress updates
-    - Memory-efficient queue management
-    - Proper resource cleanup
-
-    Classes:
-        VideoItem:
-            Container class for video information
-            Attributes:
-                - provider: Source platform (e.g., YouTube)
-                - url: Video URL
-
-        DownloadThread(QThread):
-            Background worker for download operations
-            Signals:
-                - progress(int): Download progress percentage
-                - video_progress(int, int): Current/Total videos
-                - finished(bool, str): Success status and message
-
-        DownloadDialog(QDialog):
-            Main dialog interface for download management
-            Features:
-                - URL input with validation
-                - Provider selection
-                - Queue management
-                - Progress visualization
-
-    Dependencies:
-    - PyQt5: GUI framework
-    - yt-dlp: Download backend
-    - ffmpeg: Media processing
-
-    Example Usage:
-        dialog = DownloadDialog(parent)
-        dialog.exec_()
-
-    Configuration Options:
-    - Video format selection
-    - Output path customization
-    - Download parameters:
-        * Format preferences
-        * Quality settings
-        * Post-processing options
-
-    Performance Considerations:
-    - Asynchronous download processing
-    - Efficient progress updates
-    - Memory management for queue
-    - Proper thread handling
-
-    Error Handling:
-    - Network connectivity issues
-    - Invalid URLs
-    - Platform-specific errors
-    - File system errors
-
-    @see @Project Structure#download_dialog.py
-    @see @Project#Download Management
-    @see @Project#Media Processing
+    This dialog interface supports adding multiple video URLs, selecting providers,
+    managing a download queue, and tracking download progress.
     """
 
     def __init__(self, parent=None):
+        """
+        Initialize the DownloadDialog.
+
+        Args:
+            parent (QWidget, optional): The parent widget. Defaults to None.
+        """
         super().__init__(parent)
         self.setWindowTitle("Download Video")
         self.setMinimumWidth(500)
         self.setMinimumHeight(400)
 
         self.videos = []
+        self.download_thread = None
         self.setup_ui()
 
     def setup_ui(self):
+        """
+        Set up the user interface components.
+        """
         layout = QVBoxLayout()
 
         # Provider selection
@@ -242,6 +226,9 @@ class DownloadDialog(QDialog):
         self.download_button.clicked.connect(self.download_videos)
 
     def add_video(self):
+        """
+        Add a video to the download queue.
+        """
         url = self.url_input.text().strip()
         if not url:
             QMessageBox.warning(self, "Error", "Please enter a valid URL")
@@ -255,13 +242,19 @@ class DownloadDialog(QDialog):
         self.url_input.clear()
 
     def remove_video(self):
+        """
+        Remove the selected video from the download queue.
+        """
         current_row = self.video_list.currentRow()
         if current_row >= 0:
             self.video_list.takeItem(current_row)
             self.videos.pop(current_row)
 
     def handle_cancel(self):
-        if hasattr(self, 'download_thread') and self.download_thread.isRunning():
+        """
+        Handle the cancellation of the download process.
+        """
+        if self.download_thread and self.download_thread.isRunning():
             self.download_thread.terminate()
             self.download_thread.wait()
             self.progress_bar.hide()
@@ -270,9 +263,13 @@ class DownloadDialog(QDialog):
         self.reject()
 
     def download_videos(self):
+        """
+        Initiate the download process for all queued videos.
+        """
         if not self.videos:
             QMessageBox.warning(
-                self, "Error", "Please add at least one video to download")
+                self, "Error", "Please add at least one video to download"
+            )
             return
 
         # Ask user for save location
@@ -304,9 +301,23 @@ class DownloadDialog(QDialog):
         self.download_thread.start()
 
     def update_progress_label(self, current, total):
+        """
+        Update the progress label with the current download status.
+
+        Args:
+            current (int): The index of the current video being downloaded.
+            total (int): The total number of videos to download.
+        """
         self.progress_label.setText(f"{current}/{total}")
 
     def download_finished(self, success, message):
+        """
+        Handle the completion of the download process.
+
+        Args:
+            success (bool): Indicates if the download was successful.
+            message (str): Success or error message.
+        """
         self.progress_bar.hide()
         self.progress_label.hide()
         self.download_button.setEnabled(True)
@@ -318,4 +329,5 @@ class DownloadDialog(QDialog):
             self.accept()
         else:
             QMessageBox.critical(
-                self, "Error", f"Failed to download videos: {message}")
+                self, "Error", f"Failed to download videos: {message}"
+            )
