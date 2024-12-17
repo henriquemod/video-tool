@@ -18,7 +18,11 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QStandardPaths, QThread, pyqtSignal
 import cv2
 
-from ..processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
+from ...processing.ai_upscaling import (
+    get_available_models,
+    get_model_names,
+    create_upscaler
+)
 
 
 class ImageItem:
@@ -75,7 +79,7 @@ class UpscaleThread(QThread):
         self.images = images
         self.output_dir = output_dir
         self.model_id = model_id
-        self.upscaler = AIUpscaler()
+        self.upscaler = create_upscaler(model_id)
 
     def run(self):
         """

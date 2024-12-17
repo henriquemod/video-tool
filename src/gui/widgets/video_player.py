@@ -18,12 +18,16 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
 
-from .crop_dialog import CropDialog
-from ..processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
-from ..utils.temp_file_manager import temp_manager
-from ..utils.icon_utils import generateIcon
-from ..exceptions.upscale_error import UpscaleError
-from ..exceptions.video_processing_error import VideoProcessingError
+from ..dialogs.crop_dialog import CropDialog
+from ...processing.ai_upscaling import (
+    get_available_models,
+    get_model_names,
+    create_upscaler
+)
+from ...utils.temp_file_manager import temp_manager
+from ...utils.icon_utils import generateIcon
+from ...exceptions.upscale_error import UpscaleError
+from ...exceptions.video_processing_error import VideoProcessingError
 
 
 class UpscaleThread(QThread):
@@ -36,7 +40,7 @@ class UpscaleThread(QThread):
         super().__init__()
         self.img = img
         self.model_id = model_id
-        self.upscaler = AIUpscaler()
+        self.upscaler = create_upscaler(model_id)
 
     def run(self):
         """
@@ -51,12 +55,25 @@ class UpscaleThread(QThread):
             error (str): Emits error message if upscaling fails
         """
         try:
-            # Use the centralized upscaler
-            result = self.upscaler.upscale(
-                self.img,
-                self.model_id,
-                progress_callback=self.progress.emit
-            )
+            if self.upscaler is None:
+                # Handle basic upscaling methods
+                if self.model_id.startswith('bicubic'):
+                    scale = int(self.model_id.split('_')[1][0])
+                    result = cv2.resize(self.img, None, fx=scale, fy=scale,
+                                        interpolation=cv2.INTER_CUBIC)
+                elif self.model_id.startswith('lanczos'):
+                    scale = int(self.model_id.split('_')[1][0])
+                    result = cv2.resize(self.img, None, fx=scale, fy=scale,
+                                        interpolation=cv2.INTER_LANCZOS4)
+                else:
+                    raise UpscaleError(
+                        f"Unsupported upscaling method: {self.model_id}")
+            else:
+                # Use AI upscaler
+                result = self.upscaler.upscale(
+                    self.img,
+                    progress_callback=self.progress.emit
+                )
 
             if result is not None:
                 self.finished.emit(result)
@@ -224,9 +241,6 @@ class VideoPlayer(QWidget):
         self.mediaPlayer.positionChanged.connect(self.position_changed)
         self.mediaPlayer.durationChanged.connect(self.duration_changed)
         self.mediaPlayer.stateChanged.connect(self.media_state_changed)
-
-        # Initialize upscaler
-        self.upscaler = AIUpscaler()
 
     def get_data_directory(self):
         """

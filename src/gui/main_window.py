@@ -18,10 +18,10 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QStandardPaths
 
-from .video_player import VideoPlayer
-from .download_dialog import DownloadDialog
-from .upscale_dialog import UpscaleDialog
-from .resize_dialog import ResizeDialog
+from .widgets.video_player import VideoPlayer
+from .dialogs.download_dialog import DownloadDialog
+from .dialogs.upscale_dialog import UpscaleDialog
+from .dialogs.resize_dialog import ResizeDialog
 from ..utils.icon_utils import generateIcon
 
 
@@ -79,7 +79,7 @@ class MainWindow(QMainWindow):
         load_folder_button.clicked.connect(self.change_browser_folder)
         file_browser_layout.addWidget(load_folder_button)
 
-        # Add download button with 'document-save' icon (closest match for download)
+        # Add download button with 'document-save' icon
         download_button = QPushButton(" Download video")
         download_button.setIcon(generateIcon("document-save", True))
         download_button.setStyleSheet(
@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         upscale_button.clicked.connect(self.show_upscale_dialog)
         file_browser_layout.addWidget(upscale_button)
 
-        # Add the resize batch button with 'view-fullscreen' icon (closest match for resize)
+        # Add the resize batch button with 'view-fullscreen' icon
         resize_button = QPushButton(" Resize batch")
         resize_button.setIcon(generateIcon("view-fullscreen", True))
         resize_button.setStyleSheet(
@@ -119,7 +119,6 @@ class MainWindow(QMainWindow):
         """Set up the file browser with a filtered view for video files."""
         # Create file system model
         self.file_model = QFileSystemModel()
-
         self.file_model.setRootPath(self.current_browser_path)
 
         # Set filters to show only video files
