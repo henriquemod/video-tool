@@ -121,10 +121,11 @@ class DownloadThread(QThread):
                     try:
                         ydl.download([video.url])
                     except yt_dlp.utils.DownloadError as e:
-                        raise DownloadError(str(e), url=video.url)
+                        raise DownloadError(str(e), url=video.url) from e
                     except Exception as e:
                         raise DownloadError(
-                            f"Download failed: {str(e)}", url=video.url)
+                            f"Download failed: {str(e)}", url=video.url
+                        ) from e
 
             self.finished.emit(
                 True, f"Successfully downloaded {total_videos} videos!"
