@@ -6,7 +6,6 @@ temporary files used during image and video processing operations. It ensures th
 temporary files are properly managed and cleaned up when the application exits.
 """
 
-import os
 import atexit
 import shutil
 import tempfile
