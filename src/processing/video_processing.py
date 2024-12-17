@@ -6,7 +6,6 @@ format conversion, and other video processing operations. It uses OpenCV and FFm
 for reliable video handling across different formats and codecs.
 """
 
-import os
 from typing import Optional, Tuple, Generator, List
 from pathlib import Path
 
@@ -67,8 +66,8 @@ class VideoProcessor:
         except Exception as e:
             if not isinstance(e, VideoProcessingError):
                 raise VideoProcessingError(
-                    f"Error initializing video: {str(e)}")
-            raise e
+                    f"Error initializing video: {str(e)}") from e
+            raise
 
     @property
     def frame_count(self) -> int:
@@ -113,8 +112,8 @@ class VideoProcessor:
         except Exception as e:
             if not isinstance(e, VideoProcessingError):
                 raise VideoProcessingError(
-                    f"Error retrieving frame: {str(e)}")
-            raise e
+                    f"Error retrieving frame: {str(e)}") from e
+            raise
 
     def get_frame_at_index(self, frame_index: int) -> Optional[np.ndarray]:
         """
@@ -139,8 +138,8 @@ class VideoProcessor:
         except Exception as e:
             if not isinstance(e, VideoProcessingError):
                 raise VideoProcessingError(
-                    f"Error retrieving frame: {str(e)}")
-            raise e
+                    f"Error retrieving frame: {str(e)}") from e
+            raise
 
     def extract_frames(self,
                        start_ms: Optional[int] = None,
@@ -184,7 +183,7 @@ class VideoProcessor:
 
         except Exception as e:
             raise VideoProcessingError(
-                f"Error extracting frames: {str(e)}")
+                f"Error extracting frames: {str(e)}") from e
 
     def extract_keyframes(self) -> List[np.ndarray]:
         """
@@ -219,7 +218,7 @@ class VideoProcessor:
 
         except Exception as e:
             raise VideoProcessingError(
-                f"Error extracting keyframes: {str(e)}")
+                f"Error extracting keyframes: {str(e)}") from e
 
     @staticmethod
     def is_video_file(file_path: str) -> bool:
