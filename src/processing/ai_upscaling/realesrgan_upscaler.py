@@ -12,7 +12,7 @@ from basicsr.utils.download_util import load_file_from_url
 from realesrgan import RealESRGANer
 
 from ...exceptions.upscale_error import UpscaleError
-from ...utils.config import MODEL_URLS
+from ...utils.config import MODEL_URLS, MODELS_DIR
 from .base_upscaler import BaseUpscaler
 
 
@@ -35,10 +35,10 @@ class RealESRGANUpscaler(BaseUpscaler):
         self.upsampler = None
 
         # Configure model architecture based on model name
-        if "anime" in model_name.lower():
+        if "anime" in model_name:
             self.num_feat = 64
             self.num_block = 6
-        elif "general" in model_name.lower():
+        elif "general" in model_name:
             self.num_feat = 48
             self.num_block = 16
 
@@ -69,7 +69,7 @@ class RealESRGANUpscaler(BaseUpscaler):
 
             self.model_path = load_file_from_url(
                 model_url,
-                model_dir='models'
+                model_dir=str(MODELS_DIR)
             )
 
             # Initialize RealESRGANer

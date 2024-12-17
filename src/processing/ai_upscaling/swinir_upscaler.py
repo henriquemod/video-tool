@@ -11,23 +11,25 @@ from basicsr.utils.download_util import load_file_from_url
 from basicsr.utils.registry import ARCH_REGISTRY
 
 from ...exceptions.upscale_error import UpscaleError
-from ...utils.config import MODEL_URLS
+from ...utils.config import MODEL_URLS, MODELS_DIR
 from .base_upscaler import BaseUpscaler
 
 
 class SwinIRUpscaler(BaseUpscaler):
     """SwinIR upscaler implementation."""
 
-    def __init__(self, scale: int = 4):
+    def __init__(self, model_id: str, scale: int = 4):
         """
         Initialize the SwinIR upscaler.
 
         Args:
+            model_id (str): Identifier for the model
             scale (int): Upscaling factor (default: 4)
         """
         super().__init__()
         self.scale = scale
-        self.model_name = f'SwinIR-{scale}x'
+        self.model_id = model_id
+        self.model = None
 
     def load_model(self) -> None:
         """
@@ -38,16 +40,16 @@ class SwinIRUpscaler(BaseUpscaler):
         """
         try:
             # Get model URL and download if necessary
-            model_url = MODEL_URLS.get(self.model_name)
+            model_url = MODEL_URLS.get(self.model_id)
             if not model_url:
                 raise UpscaleError(
-                    f"Model URL not found for {self.model_name}",
-                    model_id=self.model_name
+                    f"Model URL not found for {self.model_id}",
+                    model_id=self.model_id
                 )
 
             self.model_path = load_file_from_url(
                 model_url,
-                model_dir='models'
+                model_dir=str(MODELS_DIR)
             )
 
             # Initialize SwinIR model
@@ -83,7 +85,7 @@ class SwinIRUpscaler(BaseUpscaler):
         except Exception as e:
             raise UpscaleError(
                 f"Failed to load SwinIR model: {str(e)}",
-                model_id=self.model_name,
+                model_id=self.model_id,
                 error_type="ModelLoading"
             ) from e
 
@@ -111,7 +113,7 @@ class SwinIRUpscaler(BaseUpscaler):
             if self._is_cancelled:
                 raise UpscaleError(
                     "Upscaling cancelled by user",
-                    model_id=self.model_name,
+                    model_id=self.model_id,
                     error_type="Cancelled"
                 )
 
@@ -166,7 +168,7 @@ class SwinIRUpscaler(BaseUpscaler):
             if not isinstance(e, UpscaleError):
                 e = UpscaleError(
                     f"SwinIR processing failed: {str(e)}",
-                    model_id=self.model_name,
+                    model_id=self.model_id,
                     error_type="Processing"
                 )
             raise e

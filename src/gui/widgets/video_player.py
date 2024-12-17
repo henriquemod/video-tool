@@ -529,6 +529,12 @@ class VideoPlayer(QWidget):
             # Process the screenshot (crop and upscale)
             processing_path = self.process_screenshot(temp_screenshot)
 
+            # If processing_path is None, upscaling is happening asynchronously
+            if processing_path is None:
+                # Cleanup the temporary screenshot - upscaling thread will handle the rest
+                self.cleanup_temporary_files(temp_screenshot, None)
+                return
+
             # Save the final screenshot
             final_path = self.save_final_screenshot(
                 processing_path, current_position)
@@ -543,14 +549,12 @@ class VideoPlayer(QWidget):
                 )
 
         except VideoProcessingError as e:
-            QMessageBox.critical(
-                self, "Error", str(e))
+            QMessageBox.critical(self, "Error", str(e))
         except UpscaleError as e:
-            QMessageBox.critical(
-                self, "Upscaling Error", str(e))
+            QMessageBox.critical(self, "Upscaling Error", str(e))
         except IOError as e:
-            QMessageBox.critical(
-                self, "File Error", f"Failed to process image: {str(e)}")
+            QMessageBox.critical(self, "File Error",
+                                 f"Failed to process image: {str(e)}")
 
     def capture_frame(self):
         """
@@ -619,8 +623,8 @@ class VideoPlayer(QWidget):
                 raise VideoProcessingError(
                     "Failed to load image for upscaling.")
             self.start_upscaling_thread(img, selected_model)
-            # Upscaling will be handled asynchronously
-            raise VideoProcessingError("Upscaling in progress. Please wait.")
+            # Return None to indicate async processing is happening
+            return None
 
         return processing_path
 
@@ -632,6 +636,12 @@ class VideoPlayer(QWidget):
             img: Image to upscale.
             selected_model: Model selected for upscaling.
         """
+        # Clean up any existing thread
+        if self.upscale_thread:
+            self.upscale_thread.quit()
+            self.upscale_thread.wait()
+            self.upscale_thread = None
+
         # Now we'll ask for the final save location
         default_filename = f"enhanced_screenshot_{self.ms_to_time(self.mediaPlayer.position())}.png"
         final_path, _ = QFileDialog.getSaveFileName(
@@ -804,8 +814,9 @@ class VideoPlayer(QWidget):
             progress_dialog (QProgressDialog): Progress dialog to close
         """
         try:
-            # Close progress dialog
-            progress_dialog.close()
+            # Close progress dialog first
+            if progress_dialog and progress_dialog.isVisible():
+                progress_dialog.close()
 
             if result is None:
                 raise UpscaleError("Upscaling failed: No output received")
@@ -814,6 +825,12 @@ class VideoPlayer(QWidget):
             if not cv2.imwrite(final_path, result):
                 raise VideoProcessingError(
                     f"Failed to save image to {final_path}")
+
+            # Clean up the upscale thread
+            if self.upscale_thread:
+                self.upscale_thread.quit()
+                self.upscale_thread.wait()
+                self.upscale_thread = None
 
             # Show success message
             QMessageBox.information(
@@ -844,7 +861,14 @@ class VideoPlayer(QWidget):
             progress_dialog (QProgressDialog): Progress dialog to close
         """
         # Close progress dialog
-        progress_dialog.close()
+        if progress_dialog and progress_dialog.isVisible():
+            progress_dialog.close()
+
+        # Clean up the upscale thread
+        if self.upscale_thread:
+            self.upscale_thread.quit()
+            self.upscale_thread.wait()
+            self.upscale_thread = None
 
         # Show error message
         QMessageBox.critical(

@@ -30,13 +30,14 @@ def get_available_models() -> List[UpscaleModel]:
         UpscaleModel("lanczos_2x", "Lanczos (2x)", 2),
         UpscaleModel("lanczos_3x", "Lanczos (3x)", 3),
         UpscaleModel("lanczos_4x", "Lanczos (4x)", 4),
-        UpscaleModel("swinir_2x", "SwinIR (2x)", 2),
-        UpscaleModel("swinir_4x", "SwinIR (4x)", 4),
-        UpscaleModel("realesrgan_2x_plus", "Real-ESRGAN (2x+)", 2),
-        UpscaleModel("realesrgan_4x_plus", "Real-ESRGAN (4x+)", 4),
-        UpscaleModel("realesrnet_4x_plus", "Real-ESRNet (4x+)", 4),
-        UpscaleModel("esrgan_4x", "ESRGAN (4x)", 4),
-        UpscaleModel("esrgan_general_4x", "ESRGAN General (4x)", 4),
+        UpscaleModel("SwinIR-2x", "SwinIR (2x)", 2),
+        UpscaleModel("SwinIR-4x", "SwinIR (4x)", 4),
+        UpscaleModel("Real-ESRGAN-2x-plus", "Real-ESRGAN (2x+)", 2),
+        UpscaleModel("Real-ESRGAN-4x-plus", "Real-ESRGAN (4x+)", 4),
+        UpscaleModel("Real-ESRNet-4x-plus", "Real-ESRNet (4x+)", 4),
+        UpscaleModel("ESRGAN-4x", "ESRGAN (4x)", 4),
+        UpscaleModel("ESRGAN-general-x4v3", "ESRGAN General (4x)", 4),
+        UpscaleModel("Real-ESRGAN-4x-anime", "Real-ESRGAN Anime (4x)", 4),
     ]
 
 
@@ -55,12 +56,13 @@ def create_upscaler(model_id: str) -> BaseUpscaler:
     Returns:
         BaseUpscaler: An instance of the appropriate upscaler
     """
-    if model_id.startswith('realesrgan') or model_id.startswith('esrgan'):
-        return RealESRGANUpscaler(model_id)
-    elif model_id.startswith('swinir'):
+    if model_id.startswith('bicubic') or model_id.startswith('lanczos'):
+        return None
+    elif model_id.startswith('SwinIR'):
         scale = 4 if '4x' in model_id else 2
-        return SwinIRUpscaler(scale)
+        return SwinIRUpscaler(model_id, scale)
+    elif any(model_id.startswith(prefix) for prefix in ['Real-ESRGAN', 'ESRGAN', 'Real-ESRNet']):
+        scale = 4 if '4x' in model_id else 2
+        return RealESRGANUpscaler(model_id, scale)
     else:
-        # For basic methods like bicubic and lanczos, we can use a simple upscaler
-        # or return None to indicate no AI upscaling needed
         return None

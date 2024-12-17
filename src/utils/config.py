@@ -50,6 +50,22 @@ MODEL_URLS = {
         'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/'
         'realesr-general-x4v3.pth'
     ),
+    'Real-ESRGAN-4x-plus-netD': (
+        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.3/'
+        'RealESRGAN_x4plus_netD.pth'
+    ),
+    'Real-ESRGAN-2x-plus-netD': (
+        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.3/'
+        'RealESRGAN_x2plus_netD.pth'
+    ),
+    'Real-ESRGAN-4x-anime': (
+        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/'
+        'RealESRGAN_x4plus_anime_6B.pth'
+    ),
+    'Real-ESRGAN-4x-anime-netD': (
+        'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/'
+        'RealESRGAN_x4plus_anime_6B_netD.pth'
+    ),
 }
 
 # Video file extensions
