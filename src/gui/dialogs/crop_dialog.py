@@ -8,6 +8,7 @@ aspect ratio control, and grid overlay support for precise image cropping operat
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 from ...utils.temp_file_manager import temp_manager
+from ...exceptions import CropError
 
 
 class CustomRubberBand(QtWidgets.QRubberBand):
@@ -297,14 +298,15 @@ class CropDialog(QtWidgets.QDialog):
             temp_path = temp_manager.get_temp_path(
                 prefix="cropped_", suffix=".png")
             if not cropped_pixmap.save(str(temp_path)):
-                raise RuntimeError("Failed to save cropped image")
+                raise CropError("Failed to save cropped image")
 
             self.result_path = temp_path
             self.accept()
 
-        except RuntimeError as err:
-            QtWidgets.QMessageBox.critical(
-                self, "Error", f"Failed to crop image: {str(err)}")
+        except Exception as e:
+            if not isinstance(e, CropError):
+                raise CropError(f"Failed to crop image: {str(e)}")
+            raise
 
     def get_result_path(self):
         """Return the path of the cropped image."""
