@@ -130,11 +130,12 @@ class DownloadThread(QThread):
             self.finished.emit(
                 True, f"Successfully downloaded {total_videos} videos!"
             )
-        except Exception as e:
-            if not isinstance(e, DownloadError):
-                self.finished.emit(False, str(e))
-            else:
-                self.finished.emit(False, e.message)
+        except DownloadError as e:
+            self.finished.emit(False, str(e))
+        except (OSError, IOError) as e:
+            self.finished.emit(False, f"File system error: {str(e)}")
+        except Exception as e:  # Catch any unexpected errors
+            self.finished.emit(False, f"Unexpected error: {str(e)}")
 
 
 class DownloadDialog(QDialog):
