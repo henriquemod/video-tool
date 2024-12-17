@@ -12,7 +12,7 @@ from basicsr.archs.rrdbnet_arch import RRDBNet
 from basicsr.utils.download_util import load_file_from_url
 from basicsr.utils.registry import ARCH_REGISTRY
 from realesrgan import RealESRGANer
-from ..exceptions import UpscaleError
+from ..exceptions.upscale_error import UpscaleError
 
 # Model URLs for SwinIR and Real-ESRGAN
 MODEL_URLS = {
