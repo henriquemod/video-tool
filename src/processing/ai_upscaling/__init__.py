@@ -32,11 +32,10 @@ def get_available_models() -> List[UpscaleModel]:
         UpscaleModel("lanczos_4x", "Lanczos (4x)", 4),
         UpscaleModel("SwinIR-2x", "SwinIR (2x)", 2),
         UpscaleModel("SwinIR-4x", "SwinIR (4x)", 4),
+        UpscaleModel("ESRGAN-4x", "ESRGAN (4x)", 4),
         UpscaleModel("Real-ESRGAN-2x-plus", "Real-ESRGAN (2x+)", 2),
         UpscaleModel("Real-ESRGAN-4x-plus", "Real-ESRGAN (4x+)", 4),
         UpscaleModel("Real-ESRNet-4x-plus", "Real-ESRNet (4x+)", 4),
-        UpscaleModel("ESRGAN-4x", "ESRGAN (4x)", 4),
-        UpscaleModel("ESRGAN-general-x4v3", "ESRGAN General (4x)", 4),
         UpscaleModel("Real-ESRGAN-4x-anime", "Real-ESRGAN Anime (4x)", 4),
     ]
 
