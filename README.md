@@ -7,12 +7,14 @@ A powerful desktop application for processing, enhancing, and manipulating image
 ## 🌟 Features
 
 ### Video Player
+
 - Professional-grade video playback with frame-accurate navigation
 - Frame-by-frame navigation with keyboard shortcuts
 - Advanced screenshot capabilities with AI upscaling
 - Multiple playback speeds and volume control
 
 ### Image Processing
+
 - Advanced AI-powered image upscaling using multiple models:
   - Real-ESRGAN (2x and 4x)
   - SwinIR (2x and 4x)
@@ -25,12 +27,14 @@ A powerful desktop application for processing, enhancing, and manipulating image
 - Support for multiple image formats
 
 ### Video Processing
+
 - Real-time video playback and processing
 - High-quality screenshot capture
 - Frame-accurate navigation
 - Multiple format support (MP4, AVI, MKV)
 
 ### AI Enhancement
+
 - Multiple AI models for different use cases:
   - General purpose upscaling
   - Anime/illustration optimization
@@ -44,7 +48,7 @@ A powerful desktop application for processing, enhancing, and manipulating image
 - **GUI Framework**: PyQt5
 - **Image Processing**: OpenCV, Pillow
 - **Video Processing**: OpenCV, PyQt5 Multimedia
-- **AI/ML**: 
+- **AI/ML**:
   - TensorFlow
   - PyTorch
   - basicsr
@@ -62,19 +66,22 @@ A powerful desktop application for processing, enhancing, and manipulating image
 
 ## 🚀 Installation
 
-1. Clone the repository: 
+1. Clone the repository:
+
 ```bash
 git clone https://github.com/henriquemod/video-tool.git
 cd video-tool
 ```
 
 2. Create a virtual environment:
+
 ```bash
 python -m venv venv
 source venv/bin/activate # On Windows: venv\Scripts\activate
 ```
 
 3. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -82,6 +89,7 @@ pip install -r requirements.txt
 ## 💻 Usage
 
 Run the application:
+
 ```bash
 python main.py
 ```
@@ -112,6 +120,7 @@ python main.py
 ## 🔧 Key Features in Detail
 
 ### Video Player
+
 - Frame-accurate navigation with keyboard shortcuts
 - Multiple playback speeds
 - Screenshot capability with AI enhancement
@@ -119,6 +128,7 @@ python main.py
 - Progress bar with time display
 
 ### Image Processing
+
 - Multiple AI upscaling models:
   - Real-ESRGAN variants
   - SwinIR models
@@ -128,11 +138,33 @@ python main.py
 - Preview functionality
 
 ### AI Upscaling
+
 - Automatic GPU detection (CUDA/MPS)
 - Memory-efficient processing
 - Multiple model support
 - Progress tracking
 - Error handling and recovery
+
+## 🚨 Common Issues & Solutions
+
+### Qt Platform Plugin Issues
+
+#### Problem: Qt XCB Plugin Error
+
+```
+qt.qpa.plugin: Could not load the Qt platform plugin "xcb" in "[path]/cv2/qt/plugins" even though it was found.
+```
+
+#### Solution:
+
+The issue is related to OpenCV's Qt integration. You can resolve it by using the headless version of OpenCV:
+
+```bash
+pip uninstall opencv-python
+pip install opencv-python-headless
+```
+
+For more details and alternative solutions, see the full discussion at: [instant-ngp#300](https://github.com/NVlabs/instant-ngp/discussions/300#discussioncomment-3179213)
 
 ## 🤝 Contributing
 
