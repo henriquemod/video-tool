@@ -17,6 +17,13 @@ Usage:
     $ python main.py
 """
 
+import warnings
+warnings.filterwarnings(
+    'ignore',
+    category=UserWarning,
+    module='torchvision.transforms.functional_tensor'
+)
+
 import sys
 import os
 from src.app import run_app

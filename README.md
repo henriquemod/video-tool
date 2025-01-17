@@ -147,6 +147,40 @@ python main.py
 
 ## 🚨 Common Issues & Solutions
 
+### Torchvision Deprecation Warning
+
+#### Problem: Deprecation Warning from Torchvision
+
+```
+UserWarning: The torchvision.transforms.functional_tensor module is deprecated in 0.15 and will be **removed in 0.17**. Please don't rely on it. You probably just need to use APIs in torchvision.transforms.functional or in torchvision.transforms.v2.functional.
+```
+
+#### Solution:
+
+This warning appears when a deprecated torchvision module is imported. The module is used by some of our dependencies (confirmed in `basicsr` and potentially others) and will be removed in a future torchvision version. Since this is a dependency-level warning and doesn't affect functionality, we suppress it in the application. The warning is suppressed because:
+
+1. It comes from dependencies that we don't directly control
+2. The dependencies are using their latest stable versions
+3. Downgrading torchvision would be counterproductive
+4. The warning doesn't affect any functionality
+5. The dependencies will need to update their code to use the new recommended APIs
+
+The warning must be suppressed before any imports that might trigger it. In our application, this is done at the very top of main.py:
+
+```python
+# Suppress warnings before any imports
+import warnings
+warnings.filterwarnings(
+    'ignore',
+    category=UserWarning,
+    module='torchvision.transforms.functional_tensor'
+)
+
+# Rest of the imports follow...
+```
+
+Note: This warning indicates that a future version of torchvision will remove this module. When the affected dependencies update to use the new APIs (`torchvision.transforms.functional` or `torchvision.transforms.v2.functional`), we can remove this warning suppression.
+
 ### Qt Platform Plugin Issues
 
 #### Problem: Qt XCB Plugin Error
