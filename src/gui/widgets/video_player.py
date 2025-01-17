@@ -41,6 +41,7 @@ class UpscaleThread(QThread):
         self.img = img
         self.model_id = model_id
         self.upscaler = create_upscaler(model_id)
+        self._is_cancelled = False
 
     def run(self):
         """
@@ -55,6 +56,9 @@ class UpscaleThread(QThread):
             error (str): Emits error message if upscaling fails
         """
         try:
+            if self._is_cancelled:
+                raise UpscaleError("Upscaling cancelled by user")
+
             if self.upscaler is None:
                 # Handle basic upscaling methods
                 if self.model_id.startswith('bicubic'):
@@ -89,7 +93,9 @@ class UpscaleThread(QThread):
 
     def cancel(self):
         """Cancel the upscaling operation."""
-        self.upscaler.cancel()
+        self._is_cancelled = True
+        if self.upscaler is not None:
+            self.upscaler.cancel()
 
 
 class VideoPlayer(QWidget):
