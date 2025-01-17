@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox, QComboBox,
     QProgressDialog
 )
-from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent, QMediaPlaylist
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
 
@@ -169,11 +169,17 @@ class VideoPlayer(QWidget):
         # Initialize instance attributes
         self.outputFolder = QDir.currentPath()
         self.ai_capable = self.check_ai_capabilities()
-
-        # Initialize GUI components
-        self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
+        
+        # Initialize GUI components with audio and video output
+        self.mediaPlayer = QMediaPlayer(self)
         self.mediaPlayer.setNotifyInterval(250)
         self.videoWidget = QVideoWidget()
+
+        # Set default volume
+        self.mediaPlayer.setVolume(50)  # 50% volume
+
+        # Connect error handling
+        self.mediaPlayer.error.connect(self._handle_error)
 
         # Initialize OpenCV VideoCapture
         self.cap = None
@@ -437,15 +443,18 @@ class VideoPlayer(QWidget):
         self.volumeSlider = QSlider(Qt.Horizontal)
         self.volumeSlider.setRange(0, 100)
         self.volumeSlider.setValue(50)  # Default volume
-        # Set fixed width for the volume slider
         self.volumeSlider.setFixedWidth(100)
-        self.volumeSlider.valueChanged.connect(self.mediaPlayer.setVolume)
+        self.volumeSlider.valueChanged.connect(self.set_volume)
         controls_layout.addWidget(self.volumeSlider)
 
         # Add stretch to push everything to the left
         controls_layout.addStretch()
 
         parent_layout.addLayout(controls_layout)
+
+    def set_volume(self, value):
+        """Set the audio volume."""
+        self.mediaPlayer.setVolume(value)
 
     def load_video(self, file_path):
         """
@@ -454,15 +463,45 @@ class VideoPlayer(QWidget):
         Args:
             file_path (str): Path to the video file
         """
-        self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
+        if not os.path.exists(file_path):
+            QMessageBox.critical(
+                self, "Error", f"File not found: {file_path}")
+            return
+
+        # Create QMediaContent with local file URL
+        media = QMediaContent(QUrl.fromLocalFile(os.path.abspath(file_path)))
+        
+        # Set the media and verify it was loaded
+        self.mediaPlayer.setMedia(media)
+        
+        # Initialize OpenCV capture
         self.cap = cv2.VideoCapture(file_path)
         if not self.cap.isOpened():
             QMessageBox.critical(
                 self, "Error", "Failed to open video with OpenCV.")
-        else:
-            # Start playback automatically
-            self.mediaPlayer.play()
-            self.playButton.setIcon(generateIcon("media-playback-pause"))
+            return
+
+        # Start playback automatically
+        self.mediaPlayer.play()
+        
+        # Update play button icon
+        self.playButton.setIcon(generateIcon("media-playback-pause"))
+        
+        # Log media status for debugging
+        self._log_media_status()
+
+    def _log_media_status(self):
+        """Log media player status for debugging."""
+        status = self.mediaPlayer.mediaStatus()
+        state = self.mediaPlayer.state()
+        error = self.mediaPlayer.error()
+        
+        print(f"Media Status: {status}")
+        print(f"Player State: {state}")
+        print(f"Current Volume: {self.mediaPlayer.volume()}")
+        print(f"Media Player Available: {self.mediaPlayer.availability()}")
+        if error != QMediaPlayer.NoError:
+            print(f"Error: {error} - {self.mediaPlayer.errorString()}")
 
     def toggle_playback(self):
         """Toggle between play and pause."""
@@ -496,6 +535,8 @@ class VideoPlayer(QWidget):
         """Handle media state changes."""
         if state == QMediaPlayer.StoppedState:
             self.playButton.setIcon(generateIcon("media-playback-start"))
+        elif state == QMediaPlayer.PlayingState:
+            self._log_media_status()  # Log status when playing starts
 
     def ms_to_time(self, ms):
         """Convert milliseconds to hh:mm:ss:ms format."""
@@ -876,3 +917,10 @@ class VideoPlayer(QWidget):
             "Upscaling Error",
             f"An error occurred during upscaling:\n{error_message}"
         )
+
+    def _handle_error(self, error):
+        """Handle media player errors."""
+        if error != QMediaPlayer.NoError:
+            error_msg = f"Media Player Error: {error} - {self.mediaPlayer.errorString()}"
+            print(error_msg)  # Print to console for debugging
+            QMessageBox.critical(self, "Error", error_msg)
