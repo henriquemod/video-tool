@@ -100,21 +100,24 @@ python main.py
 ├── main.py
 ├── src/
 │   ├── app.py
-│   ├── exceptions/ # Custom exception handling
-│   │   ├── upscale_error.py # AI upscaling exceptions
-│   │   └── video_processing_error.py # Video processing exceptions
+│   ├── exceptions/
+│   │   └── upscale_error.py
 │   ├── gui/
-│   │   ├── main_window.py # Main application window
-│   │   ├── video_player.py # Video playback component
-│   │   ├── download_dialog.py # Video download interface
-│   │   ├── crop_dialog.py # Image cropping interface
-│   │   ├── upscale_dialog.py # AI upscaling interface
-│   │   └── resize_dialog.py # Image resizing interface
+│   │   ├── dialogs/
+│   │   │   ├── upscale_dialog.py
+│   │   │   └── resize_dialog.py
+│   │   ├── widgets/
+│   │   │   └── video_player.py
+│   │   └── main_window.py
 │   ├── processing/
-│   │   └── ai_upscaling.py # AI enhancement implementation
+│   │   ├── upscaling/
+│   │   │   ├── base_upscaler.py
+│   │   │   ├── basic_upscaler.py
+│   │   │   ├── realesrgan_upscaler.py
+│   │   │   └── swinir_upscaler.py
+│   │   └── video_processing.py
 │   └── utils/
-│       ├── icon_utils.py # Icon management
-│       └── temp_file_manager.py # Temporary file handling
+│       └── torchvision_patch.py
 ```
 
 ## 🔧 Key Features in Detail
