@@ -147,6 +147,38 @@ python main.py
 
 ## 🚨 Common Issues & Solutions
 
+### Torchvision and BasicSR Compatibility
+
+#### Issue: Incompatibility between newer torchvision and basicsr
+
+When using newer versions of torchvision (0.20.1+), you might encounter this error:
+
+```
+ModuleNotFoundError: No module named 'torchvision.transforms.functional_tensor'
+```
+
+#### Solution:
+
+We implemented a compatibility layer (`src/utils/torchvision_patch.py`) to handle this issue. This was necessary because:
+
+1. The basicsr package (1.4.2) depends on an older torchvision API that was deprecated and removed
+2. basicsr hasn't released an update to use the new torchvision APIs yet
+3. Downgrading torchvision would prevent us from using newer features and improvements
+
+The compatibility layer:
+
+- Transparently redirects old import paths to new ones
+- Doesn't modify any package code
+- Will be easy to remove once basicsr updates
+
+This is a temporary solution until basicsr releases an update using the new torchvision APIs. We chose this approach over:
+
+- Forking and maintaining basicsr (too resource-intensive)
+- Downgrading torchvision (would miss out on improvements)
+- Waiting for an update (would block development)
+
+The implementation can be found in `src/utils/torchvision_patch.py`.
+
 ### Torchvision Deprecation Warning
 
 #### Problem: Deprecation Warning from Torchvision

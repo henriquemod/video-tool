@@ -49,8 +49,8 @@ tb-nightly==2.19.0a20241212
 tensorboard-data-server==0.7.2
 tifffile==2024.12.12
 tomli==2.2.1
-torch==2.0.1
-torchvision==0.15.2
+torch==2.5.1
+torchvision==0.20.1
 tqdm==4.67.1
 typing_extensions==4.12.2
 urllib3==2.3.0
