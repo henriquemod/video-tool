@@ -13,7 +13,7 @@ import os
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
-    QFileDialog, QGroupBox, QRadioButton, QButtonGroup, QCheckBox
+    QFileDialog, QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QWidget
 )
 from PyQt5.QtCore import QStandardPaths, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QPainter
@@ -285,9 +285,33 @@ class UpscaleDialog(QDialog):
         self.multiple_to_one = QRadioButton("Multiple-to-One (Multiple images → One method)")
         self.multiple_to_multiple = QRadioButton("Multiple-to-Multiple (Multiple images → Multiple methods)")
         
-        self.one_to_multiple.setToolTip("Process a single image through multiple upscaling methods")
-        self.multiple_to_one.setToolTip("Process multiple images using a single upscaling method")
-        self.multiple_to_multiple.setToolTip("Process multiple images through multiple upscaling methods")
+        self.one_to_multiple.setToolTip(
+            "Process a single image through multiple upscaling methods.\n\n"
+            "Best for:\n"
+            "• Comparing different upscaling methods on the same image\n"
+            "• Finding the best method for a specific type of image\n"
+            "• Quick experimentation with different methods\n\n"
+            "Processing time depends on the number of methods selected and their complexity."
+        )
+        self.multiple_to_one.setToolTip(
+            "Process multiple images using a single upscaling method.\n\n"
+            "Best for:\n"
+            "• Batch processing multiple images consistently\n"
+            "• When you've already identified the best method\n"
+            "• Maintaining uniform quality across a set of images\n\n"
+            "Processing time scales linearly with the number of images."
+        )
+        self.multiple_to_multiple.setToolTip(
+            "Process multiple images through multiple upscaling methods.\n\n"
+            "Best for:\n"
+            "• Comprehensive comparison across multiple images\n"
+            "• Creating multiple variants of each image\n\n"
+            "⚠️ Most resource-intensive option:\n"
+            "• Processing time = (Number of images × Number of methods)\n"
+            "• Memory usage increases significantly\n"
+            "• Some AI-powered methods may take several minutes per image\n"
+            "• Consider running overnight for large batches"
+        )
         
         self.mode_group.addButton(self.one_to_multiple)
         self.mode_group.addButton(self.multiple_to_one)
@@ -299,31 +323,54 @@ class UpscaleDialog(QDialog):
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
 
-        # Red Box: Input Area
+        # Input Area
         input_group = QGroupBox("Input")
         input_layout = QVBoxLayout()
         
-        # Path input
+        # Single image mode components
+        self.single_mode_widget = QWidget()
+        single_mode_layout = QVBoxLayout()
+        
+        # Browse button and path display in same line
+        browse_layout = QHBoxLayout()
+        self.single_image_browse = QPushButton("Browse Image")
+        self.single_image_path = QLineEdit()
+        self.single_image_path.setReadOnly(True)
+        self.single_image_path.setPlaceholderText("No image selected")
+        browse_layout.addWidget(self.single_image_browse)
+        browse_layout.addWidget(self.single_image_path)
+        single_mode_layout.addLayout(browse_layout)
+        
+        self.single_mode_widget.setLayout(single_mode_layout)
+        
+        # Multiple images mode components
+        self.multiple_mode_widget = QWidget()
+        multiple_mode_layout = QVBoxLayout()
+        
+        # Path input with buttons
         path_layout = QHBoxLayout()
-        path_label = QLabel("Images:")
         self.path_input = QLineEdit()
-        self.browse_button = QPushButton("Browse Files")
         self.add_button = QPushButton("Add")
-        path_layout.addWidget(path_label)
+        self.browse_button = QPushButton("Browse Files")
         path_layout.addWidget(self.path_input)
         path_layout.addWidget(self.add_button)
         path_layout.addWidget(self.browse_button)
-        input_layout.addLayout(path_layout)
+        multiple_mode_layout.addLayout(path_layout)
 
         # Image list with drag & drop support
         self.image_list = DragDropListWidget(self)
         self.image_list.setPlaceholderText("Drop images here or click Browse Files")
-        input_layout.addWidget(self.image_list)
+        multiple_mode_layout.addWidget(self.image_list)
 
         # Remove button
         self.remove_button = QPushButton("Remove Selected")
-        input_layout.addWidget(self.remove_button)
+        multiple_mode_layout.addWidget(self.remove_button)
         
+        self.multiple_mode_widget.setLayout(multiple_mode_layout)
+        
+        # Add both mode widgets to input layout
+        input_layout.addWidget(self.single_mode_widget)
+        input_layout.addWidget(self.multiple_mode_widget)
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
 
@@ -331,16 +378,29 @@ class UpscaleDialog(QDialog):
         method_group = QGroupBox("Upscale Methods")
         method_layout = QVBoxLayout()
         
-        # Method selection
+        # Single method selection (ComboBox for Multiple-to-One mode)
+        self.single_method_widget = QWidget()
+        single_method_layout = QVBoxLayout()
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(get_model_names())
+        single_method_layout.addWidget(self.method_combo)
+        self.single_method_widget.setLayout(single_method_layout)
+        
+        # Multiple method selection (CheckList for One-to-Multiple and Multiple-to-Multiple modes)
+        self.multiple_method_widget = QWidget()
+        multiple_method_layout = QVBoxLayout()
         self.method_list = QListWidget()
-        self.method_list.setSelectionMode(QListWidget.MultiSelection)
         for method in get_model_names():
             item = QListWidgetItem(method)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
             self.method_list.addItem(item)
+        multiple_method_layout.addWidget(self.method_list)
+        self.multiple_method_widget.setLayout(multiple_method_layout)
         
-        method_layout.addWidget(self.method_list)
+        # Add both widgets to method layout
+        method_layout.addWidget(self.single_method_widget)
+        method_layout.addWidget(self.multiple_method_widget)
         method_group.setLayout(method_layout)
         layout.addWidget(method_group)
 
@@ -394,6 +454,9 @@ class UpscaleDialog(QDialog):
         self.cancel_button.clicked.connect(self.handle_cancel)
         self.upscale_button.clicked.connect(self.upscale_images)
 
+        # Connect additional signals
+        self.single_image_browse.clicked.connect(self.browse_single_image)
+
         # Initial UI update
         self.update_ui_for_mode()
 
@@ -404,22 +467,20 @@ class UpscaleDialog(QDialog):
         one_to_multiple = self.one_to_multiple.isChecked()
         multiple_to_one = self.multiple_to_one.isChecked()
         
-        # Update image list selection mode
-        self.image_list.setSelectionMode(
-            QListWidget.SingleSelection if one_to_multiple else QListWidget.MultiSelection
-        )
+        # Show/hide appropriate input mode
+        self.single_mode_widget.setVisible(one_to_multiple)
+        self.multiple_mode_widget.setVisible(not one_to_multiple)
         
-        # Update method list selection mode and behavior
-        if multiple_to_one:
-            self.method_list.setSelectionMode(QListWidget.SingleSelection)
-            # Uncheck all items since we're using selection instead
-            for i in range(self.method_list.count()):
-                item = self.method_list.item(i)
-                item.setCheckState(Qt.Unchecked)
-        else:
-            self.method_list.setSelectionMode(QListWidget.NoSelection)
-            # Clear selection since we're using checkboxes
-            self.method_list.clearSelection()
+        # Show/hide appropriate method selection mode
+        self.single_method_widget.setVisible(multiple_to_one)
+        self.multiple_method_widget.setVisible(not multiple_to_one)
+        
+        # If switching to one-to-multiple mode, keep only the last image
+        if one_to_multiple and self.images:
+            last_image = self.images[-1]
+            self.images = [last_image]
+            self.single_image_path.setText(last_image.path)
+            self.image_list.clear()
             
         # Update the UI to reflect the changes
         self.method_list.update()
@@ -498,10 +559,8 @@ class UpscaleDialog(QDialog):
         models = get_available_models()
         
         if self.multiple_to_one.isChecked():
-            # In Multiple-to-One mode, use the current selection
-            current_row = self.method_list.currentRow()
-            if current_row >= 0:  # Make sure there is a selection
-                selected_models.append(models[current_row].id)
+            # In Multiple-to-One mode, use the combo box selection
+            selected_models.append(models[self.method_combo.currentIndex()].id)
         else:
             # In One-to-Multiple or Multiple-to-Multiple mode, use checked items
             for i in range(self.method_list.count()):
@@ -624,3 +683,19 @@ class UpscaleDialog(QDialog):
             QMessageBox.critical(
                 self, "Error", f"Failed to upscale images: {message}"
             )
+
+    def browse_single_image(self):
+        """
+        Open a file dialog to select a single image for one-to-multiple mode.
+        """
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Image",
+            "",
+            "Image Files (*.png *.jpg *.jpeg *.bmp);;All Files (*)"
+        )
+        
+        if file_path:
+            self.images.clear()
+            self.add_image_path(file_path)
+            self.single_image_path.setText(file_path)
