@@ -13,7 +13,7 @@ import os
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QMessageBox, QProgressBar, QListWidget, QListWidgetItem,
-    QFileDialog, QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QWidget
+    QFileDialog, QGroupBox, QRadioButton, QButtonGroup, QWidget
 )
 from PyQt5.QtCore import QStandardPaths, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QDragEnterEvent, QDropEvent, QPainter
@@ -88,7 +88,7 @@ class UpscaleThread(QThread):
         for model_id in model_ids:
             try:
                 self.upscalers[model_id] = create_upscaler(model_id)
-            except Exception as e:
+            except (ImportError, RuntimeError, ValueError) as e:
                 self.finished.emit(False, f"Failed to create upscaler for model {model_id}: {str(e)}")
                 return
 
@@ -103,18 +103,18 @@ class UpscaleThread(QThread):
             total_operations = len(self.images) * len(self.model_ids)
             current_operation = 0
 
-            for i, image in enumerate(self.images, 1):
+            for image in self.images:
                 # Read image
                 img = cv2.imread(image.path)
                 if img is None:
                     raise FileNotFoundError(f"Failed to load image: {image.path}")
 
-                for j, model_id in enumerate(self.model_ids, 1):
-                    current_operation += 1
-                    self.image_progress.emit(current_operation, total_operations)
-
+                for model_id in self.model_ids:
+                    # Create a local copy for the closure
+                    current_op = current_operation + 1
+                    
                     # Calculate progress
-                    progress = (current_operation - 1) / total_operations * 100
+                    progress = (current_op - 1) / total_operations * 100
                     self.progress.emit(int(progress))
 
                     # Get upscaler for this model
@@ -122,38 +122,36 @@ class UpscaleThread(QThread):
                     if upscaler is None:
                         raise RuntimeError(f"Upscaler not found for model {model_id}")
 
-                    # Use AIUpscaler instance for upscaling
-                    upscaled = upscaler.upscale(
-                        img,
-                        progress_callback=lambda p: self.progress.emit(
-                            int((current_operation - 1) / total_operations * 100 + p / total_operations)
+                    # Define progress callback with local variable
+                    def progress_callback(p, op=current_op):
+                        return self.progress.emit(
+                            int((op - 1) / total_operations * 100 + p / total_operations)
                         )
-                    )
+
+                    # Use AIUpscaler instance for upscaling
+                    upscaled = upscaler.upscale(img, progress_callback=progress_callback)
 
                     # Generate output filename
                     base_name = Path(image.path).stem
                     if self.output_prefix:
-                        output_name = f"{self.output_prefix}_{current_operation}.png"
+                        output_name = f"{self.output_prefix}_{current_op}.png"
                     else:
-                        model_name = model_id.split('/')[-1]  # Get last part of model ID
+                        model_name = model_id.split('/')[-1]
                         output_name = f"{base_name}_{model_name}.png"
 
                     # Save output
                     output_path = os.path.join(self.output_dir, output_name)
-                    success = cv2.imwrite(output_path, upscaled)
-                    if not success:
+                    if not cv2.imwrite(output_path, upscaled):
                         raise IOError(f"Failed to save upscaled image: {output_path}")
 
-                    # Update progress
-                    progress = current_operation / total_operations * 100
-                    self.progress.emit(int(progress))
+                    current_operation = current_op
+                    self.image_progress.emit(current_operation, total_operations)
+                    self.progress.emit(int(current_operation / total_operations * 100))
 
             self.finished.emit(True, f"Successfully upscaled {total_operations} images!")
-        except (FileNotFoundError, IOError) as e:
+        except (FileNotFoundError, IOError, RuntimeError) as e:
             self.finished.emit(False, str(e))
-        except RuntimeError as e:
-            self.finished.emit(False, f"Runtime error: {str(e)}")
-        except Exception as e:
+        except Exception as e:  # Keep broad exception as last resort
             self.finished.emit(False, f"An unexpected error occurred: {str(e)}")
 
 
@@ -208,21 +206,22 @@ class DragDropListWidget(QListWidget):
             )
             painter.restore()
 
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        # Accept more MIME types to handle different drag sources
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        """Handle drag enter events for the widget."""
         if event.mimeData().hasUrls() or event.mimeData().hasText() or event.mimeData().hasImage():
             event.accept()
         else:
             event.ignore()
 
-    def dragMoveEvent(self, event):
-        # Accept more MIME types in dragMove as well
+    def dragMoveEvent(self, event: QDragEnterEvent) -> None:
+        """Handle drag move events for the widget."""
         if event.mimeData().hasUrls() or event.mimeData().hasText() or event.mimeData().hasImage():
             event.accept()
         else:
             event.ignore()
 
-    def dropEvent(self, event: QDropEvent):
+    def dropEvent(self, event: QDropEvent) -> None:
+        """Handle drop events for the widget."""
         dialog = self.get_dialog()
         if not dialog:
             event.ignore()

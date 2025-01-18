@@ -5,9 +5,9 @@ This module provides implementations for basic upscaling methods like bicubic
 and lanczos interpolation using OpenCV.
 """
 
+from typing import Optional, Callable
 import cv2
 import numpy as np
-from typing import Optional, Callable
 
 from .base_upscaler import BaseUpscaler
 
