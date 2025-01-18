@@ -227,6 +227,7 @@ The issue is related to OpenCV's Qt integration. You can resolve it by using the
 
 ```bash
 pip uninstall opencv-python
+pip uninstall opencv-python-headless
 pip install opencv-python-headless
 ```
 
