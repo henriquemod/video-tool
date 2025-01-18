@@ -67,24 +67,52 @@ A powerful desktop application for processing, enhancing, and manipulating image
 ## 🚀 Installation
 
 1. Clone the repository:
-
 ```bash
 git clone https://github.com/henriquemod/video-tool.git
 cd video-tool
 ```
 
-2. Create a virtual environment:
+2. Create and activate a virtual environment:
 
+**On Linux/MacOS:**
 ```bash
 python -m venv venv
-source venv/bin/activate # On Windows: venv\Scripts\activate
+source venv/bin/activate
 ```
 
-3. Install dependencies:
-
+**On Windows:**
 ```bash
-pip install -r requirements.txt
+python -m venv venv
+venv\Scripts\activate
 ```
+
+3. Run the installation script:
+
+**On Linux/MacOS:**
+```bash
+chmod +x scripts/install.sh  # Make the script executable
+./scripts/install.sh
+```
+
+**On Windows:**
+```bash
+scripts\install.bat
+```
+
+4. Run the application:
+```bash
+python main.py
+```
+
+### ⚠️ Important Note for Windows Users
+
+If you're experiencing issues playing videos on Windows, you likely need to install the necessary media codecs. We recommend installing **K-Lite Codec Pack**:
+
+1. Download K-Lite Codec Pack from the [official website](https://codecguide.com/download_kl.htm)
+2. Install using the default settings
+3. Done
+
+This will ensure proper playback of various video formats in the application.
 
 ## 💻 Usage
 

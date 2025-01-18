@@ -8,11 +8,27 @@ used for consistent icon handling across the application's user interface.
 
 from PyQt5.QtGui import QIcon, QColor, QPainter, QPixmap
 from PyQt5.QtCore import QSize
+import qtawesome as qta
 
+# Map theme icon names to Font Awesome icons
+ICON_MAP = {
+    'media-playback-start': 'fa5s.play',
+    'media-playback-pause': 'fa5s.pause',
+    'media-playback-stop': 'fa5s.stop',
+    'media-skip-forward': 'fa5s.step-forward',
+    'media-skip-backward': 'fa5s.step-backward',
+    'media-seek-forward': 'fa5s.forward',
+    'media-seek-backward': 'fa5s.backward',
+    'folder-open': 'fa5s.folder-open',
+    'document-save': 'fa5s.save',
+    'camera-photo': 'fa5s.camera',
+    "zoom-fit-best": "fa5s.expand-arrows-alt",
+    "view-fullscreen": "fa5s.expand-arrows-alt",
+}
 
 def generateIcon(icon_name: str, fromTheme: bool = False) -> QIcon:
     """
-    Generate a QIcon from a theme icon name, optionally converting it to black.
+    Generate a QIcon, falling back to Font Awesome if theme icon is not available.
 
     Args:
         icon_name (str): Name of the icon from the system theme
@@ -22,6 +38,11 @@ def generateIcon(icon_name: str, fromTheme: bool = False) -> QIcon:
         QIcon: The generated icon
     """
     icon = QIcon.fromTheme(icon_name)
+    
+    # If theme icon is not available, use Font Awesome
+    if icon.isNull() and icon_name in ICON_MAP:
+        return qta.icon(ICON_MAP[icon_name], color='black')
+        
     if fromTheme:
         return icon
 
