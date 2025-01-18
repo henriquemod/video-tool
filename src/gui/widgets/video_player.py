@@ -367,10 +367,31 @@ class VideoPlayer(QWidget):
         self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")
         self.screenshotButton.setShortcut("Ctrl+S")
         self.screenshotButton.setIcon(generateIcon("camera-photo", True))
-        self.screenshotButton.setStyleSheet(
-            "QPushButton { background-color: #678dc6; padding-left: 5px; } "
-            "QPushButton QToolTip { background-color: none; }")
+        self.screenshotButton.setStyleSheet("""
+            QPushButton { 
+                background-color: #678dc6; 
+                color: white;
+                padding-left: 5px;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #7699d1;
+            }
+            QPushButton:pressed {
+                background-color: #5a7eb2;
+            }
+            QPushButton:disabled {
+                background-color: #a0a0a0;
+                color: #e0e0e0;
+            }
+            QPushButton QToolTip { 
+                background-color: none;
+            }
+        """)
         self.screenshotButton.clicked.connect(self.take_screenshot)
+        # Initialize button state
+        self.update_screenshot_button_state()
 
     def connect_button_signals(self):
         """Connect all button signals to their respective slots."""
@@ -487,6 +508,9 @@ class VideoPlayer(QWidget):
                 self, "Error", "Failed to open video with OpenCV.")
             return
 
+        # Update screenshot button state
+        self.update_screenshot_button_state()
+
         # Start playback automatically
         self.mediaPlayer.play()
         
@@ -568,6 +592,14 @@ class VideoPlayer(QWidget):
 
     def take_screenshot(self):
         """Captures the current frame as a high-quality screenshot."""
+        if not self.cap or not self.cap.isOpened():
+            QMessageBox.warning(
+                self,
+                "No Video Loaded",
+                "Please load a video before attempting to take a screenshot."
+            )
+            return
+
         try:
             # Capture and save the screenshot
             frame, current_position = self.capture_frame()
@@ -788,6 +820,8 @@ class VideoPlayer(QWidget):
         """
         if self.cap and self.cap.isOpened():
             self.cap.release()
+            self.cap = None
+            self.update_screenshot_button_state()
         event.accept()
 
     def toggle_crop(self, state):
@@ -949,3 +983,12 @@ class VideoPlayer(QWidget):
             error_msg = f"Media Player Error: {error} - {self.mediaPlayer.errorString()}"
             print(error_msg)  # Print to console for debugging
             QMessageBox.critical(self, "Error", error_msg)
+
+    def update_screenshot_button_state(self):
+        """Enable or disable screenshot button based on video state."""
+        has_video = self.cap is not None and self.cap.isOpened()
+        self.screenshotButton.setEnabled(has_video)
+        if not has_video:
+            self.screenshotButton.setToolTip("Load a video first to take screenshots")
+        else:
+            self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")
