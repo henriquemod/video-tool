@@ -19,7 +19,7 @@ from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
 
 from ..dialogs.crop_dialog import CropDialog
-from ...processing.ai_upscaling import (
+from ...processing.upscaling import (
     get_available_models,
     get_model_names,
     create_upscaler

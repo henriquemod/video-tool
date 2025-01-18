@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import List
 
 from .base_upscaler import BaseUpscaler
+from .basic_upscaler import BasicUpscaler
 from .realesrgan_upscaler import RealESRGANUpscaler
 from .swinir_upscaler import SwinIRUpscaler
 
@@ -55,8 +56,10 @@ def create_upscaler(model_id: str) -> BaseUpscaler:
     Returns:
         BaseUpscaler: An instance of the appropriate upscaler
     """
-    if model_id.startswith('bicubic') or model_id.startswith('lanczos'):
+    if model_id == "no_upscale":
         return None
+    elif model_id.startswith('bicubic') or model_id.startswith('lanczos'):
+        return BasicUpscaler(model_id)
     elif model_id.startswith('SwinIR'):
         scale = 4 if '4x' in model_id else 2
         return SwinIRUpscaler(model_id, scale)
