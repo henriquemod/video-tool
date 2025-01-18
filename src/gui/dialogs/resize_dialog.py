@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QFileDialog, QSpinBox
 )
 from PyQt5.QtCore import QStandardPaths, QThread, pyqtSignal
+from ...exceptions import ResizeError
 
 
 class ImageItem:
@@ -71,8 +72,10 @@ class ResizeThread(QThread):
             total_images = len(self.images)
             self.finished.emit(
                 True, f"Successfully resized {total_images} images!")
-        except (IOError, ValueError) as e:
-            self.finished.emit(False, str(e))
+        except Exception as e:
+            if not isinstance(e, ResizeError):
+                raise ResizeError(str(e))
+            raise
 
     def _process_images(self):
         """
@@ -95,61 +98,68 @@ class ResizeThread(QThread):
         progress = (current_index - 1) / total_images * 100
         self.progress.emit(int(progress))
 
-        # Read image with cv2
-        img = cv2.imread(image.path, cv2.IMREAD_UNCHANGED)
-        if img is None:
-            raise IOError(f"Failed to load image: {image.path}")
+        try:
+            # Read image with cv2
+            img = cv2.imread(image.path, cv2.IMREAD_UNCHANGED)
+            if img is None:
+                raise ResizeError(f"Failed to load image: {image.path}")
 
-        # Calculate dimensions
-        h, w = img.shape[:2]
-        if self.config.maintain_ratio:
-            # Calculate aspect ratio
-            aspect = w / h
-            target_aspect = self.config.target_width / self.config.target_height
-            if target_aspect > aspect:
-                new_w = int(self.config.target_height * aspect)
-                new_h = self.config.target_height
+            # Calculate dimensions
+            h, w = img.shape[:2]
+            if self.config.maintain_ratio:
+                # Calculate aspect ratio
+                aspect = w / h
+                target_aspect = self.config.target_width / self.config.target_height
+                if target_aspect > aspect:
+                    new_w = int(self.config.target_height * aspect)
+                    new_h = self.config.target_height
+                else:
+                    new_w = self.config.target_width
+                    new_h = int(self.config.target_width / aspect)
             else:
                 new_w = self.config.target_width
-                new_h = int(self.config.target_width / aspect)
-        else:
-            new_w = self.config.target_width
-            new_h = self.config.target_height
+                new_h = self.config.target_height
 
-        # Resize image using Lanczos algorithm for best quality
-        resized = cv2.resize(
-            img,
-            (new_w, new_h),
-            interpolation=cv2.INTER_LANCZOS4
-        )
-
-        # Save with maximum quality
-        output_path = os.path.join(
-            self.config.output_dir,
-            f"resized_{Path(image.path).name}"
-        )
-
-        # Save with maximum quality settings
-        if output_path.lower().endswith(('.jpg', '.jpeg')):
-            success = cv2.imwrite(
-                output_path,
-                resized,
-                [cv2.IMWRITE_JPEG_QUALITY, 100]
+            # Resize image using Lanczos algorithm for best quality
+            resized = cv2.resize(
+                img,
+                (new_w, new_h),
+                interpolation=cv2.INTER_LANCZOS4
             )
-        elif output_path.lower().endswith('.png'):
-            success = cv2.imwrite(
-                output_path,
-                resized,
-                [cv2.IMWRITE_PNG_COMPRESSION, 0]
+
+            # Save with maximum quality
+            output_path = os.path.join(
+                self.config.output_dir,
+                f"resized_{Path(image.path).name}"
             )
-        else:
-            success = cv2.imwrite(output_path, resized)
 
-        if not success:
-            raise IOError(f"Failed to save resized image: {output_path}")
+            # Save with maximum quality settings
+            if output_path.lower().endswith(('.jpg', '.jpeg')):
+                success = cv2.imwrite(
+                    output_path,
+                    resized,
+                    [cv2.IMWRITE_JPEG_QUALITY, 100]
+                )
+            elif output_path.lower().endswith('.png'):
+                success = cv2.imwrite(
+                    output_path,
+                    resized,
+                    [cv2.IMWRITE_PNG_COMPRESSION, 0]
+                )
+            else:
+                success = cv2.imwrite(output_path, resized)
 
-        progress = current_index / total_images * 100
-        self.progress.emit(int(progress))
+            if not success:
+                raise ResizeError(
+                    f"Failed to save resized image: {output_path}")
+
+            progress = current_index / total_images * 100
+            self.progress.emit(int(progress))
+
+        except Exception as e:
+            if not isinstance(e, ResizeError):
+                raise ResizeError(f"Failed to process image: {str(e)}")
+            raise
 
 
 class AspectRatio:

@@ -11,10 +11,10 @@ from .gui.main_window import MainWindow
 def run_app():
     """
     Initialize and run the main application.
-    
+
     Creates the QApplication instance, instantiates the main window,
     displays it, and starts the event loop.
-    
+
     Returns:
         None. The function will exit the application when the main window is closed.
     """

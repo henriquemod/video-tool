@@ -1,18 +1,18 @@
 """
-video_processing_error.py
+Module: resize_error.py
 
-This module defines custom exception classes for handling errors related to video processing operations.
+Provides custom exception class for image resizing related errors.
 """
 
 from .base_exception import MultimediaAssistantError
 
 
-class VideoProcessingError(MultimediaAssistantError):
-    """Custom exception for video processing related errors"""
+class ResizeError(MultimediaAssistantError):
+    """Custom exception for image resizing related errors"""
 
     def __init__(self, message: str, details: str = None):
         """
-        Initialize VideoProcessingError.
+        Initialize ResizeError.
 
         Args:
             message (str): Main error message

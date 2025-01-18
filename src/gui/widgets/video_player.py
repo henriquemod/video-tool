@@ -18,12 +18,16 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
 
-from .crop_dialog import CropDialog
-from ..processing.ai_upscaling import AIUpscaler, get_available_models, get_model_names
-from ..utils.temp_file_manager import temp_manager
-from ..utils.icon_utils import generateIcon
-from ..exceptions.upscale_error import UpscaleError
-from ..exceptions.video_processing_error import VideoProcessingError
+from ..dialogs.crop_dialog import CropDialog
+from ...processing.upscaling import (
+    get_available_models,
+    get_model_names,
+    create_upscaler
+)
+from ...utils.temp_file_manager import temp_manager
+from ...utils.icon_utils import generateIcon
+from ...exceptions.upscale_error import UpscaleError
+from ...exceptions.video_processing_error import VideoProcessingError
 
 
 class UpscaleThread(QThread):
@@ -36,7 +40,8 @@ class UpscaleThread(QThread):
         super().__init__()
         self.img = img
         self.model_id = model_id
-        self.upscaler = AIUpscaler()
+        self.upscaler = create_upscaler(model_id)
+        self._is_cancelled = False
 
     def run(self):
         """
@@ -51,12 +56,28 @@ class UpscaleThread(QThread):
             error (str): Emits error message if upscaling fails
         """
         try:
-            # Use the centralized upscaler
-            result = self.upscaler.upscale(
-                self.img,
-                self.model_id,
-                progress_callback=self.progress.emit
-            )
+            if self._is_cancelled:
+                raise UpscaleError("Upscaling cancelled by user")
+
+            if self.upscaler is None:
+                # Handle basic upscaling methods
+                if self.model_id.startswith('bicubic'):
+                    scale = int(self.model_id.split('_')[1][0])
+                    result = cv2.resize(self.img, None, fx=scale, fy=scale,
+                                        interpolation=cv2.INTER_CUBIC)
+                elif self.model_id.startswith('lanczos'):
+                    scale = int(self.model_id.split('_')[1][0])
+                    result = cv2.resize(self.img, None, fx=scale, fy=scale,
+                                        interpolation=cv2.INTER_LANCZOS4)
+                else:
+                    raise UpscaleError(
+                        f"Unsupported upscaling method: {self.model_id}")
+            else:
+                # Use AI upscaler
+                result = self.upscaler.upscale(
+                    self.img,
+                    progress_callback=self.progress.emit
+                )
 
             if result is not None:
                 self.finished.emit(result)
@@ -72,7 +93,9 @@ class UpscaleThread(QThread):
 
     def cancel(self):
         """Cancel the upscaling operation."""
-        self.upscaler.cancel()
+        self._is_cancelled = True
+        if self.upscaler is not None:
+            self.upscaler.cancel()
 
 
 class VideoPlayer(QWidget):
@@ -152,11 +175,17 @@ class VideoPlayer(QWidget):
         # Initialize instance attributes
         self.outputFolder = QDir.currentPath()
         self.ai_capable = self.check_ai_capabilities()
-
-        # Initialize GUI components
-        self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
+        
+        # Initialize GUI components with audio and video output
+        self.mediaPlayer = QMediaPlayer(self)
         self.mediaPlayer.setNotifyInterval(250)
         self.videoWidget = QVideoWidget()
+
+        # Set default volume
+        self.mediaPlayer.setVolume(50)  # 50% volume
+
+        # Connect error handling
+        self.mediaPlayer.error.connect(self._handle_error)
 
         # Initialize OpenCV VideoCapture
         self.cap = None
@@ -224,9 +253,6 @@ class VideoPlayer(QWidget):
         self.mediaPlayer.positionChanged.connect(self.position_changed)
         self.mediaPlayer.durationChanged.connect(self.duration_changed)
         self.mediaPlayer.stateChanged.connect(self.media_state_changed)
-
-        # Initialize upscaler
-        self.upscaler = AIUpscaler()
 
     def get_data_directory(self):
         """
@@ -341,10 +367,31 @@ class VideoPlayer(QWidget):
         self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")
         self.screenshotButton.setShortcut("Ctrl+S")
         self.screenshotButton.setIcon(generateIcon("camera-photo", True))
-        self.screenshotButton.setStyleSheet(
-            "QPushButton { background-color: #678dc6; padding-left: 5px; } "
-            "QPushButton QToolTip { background-color: none; }")
+        self.screenshotButton.setStyleSheet("""
+            QPushButton { 
+                background-color: #678dc6; 
+                color: white;
+                padding-left: 5px;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #7699d1;
+            }
+            QPushButton:pressed {
+                background-color: #5a7eb2;
+            }
+            QPushButton:disabled {
+                background-color: #a0a0a0;
+                color: #e0e0e0;
+            }
+            QPushButton QToolTip { 
+                background-color: none;
+            }
+        """)
         self.screenshotButton.clicked.connect(self.take_screenshot)
+        # Initialize button state
+        self.update_screenshot_button_state()
 
     def connect_button_signals(self):
         """Connect all button signals to their respective slots."""
@@ -423,15 +470,18 @@ class VideoPlayer(QWidget):
         self.volumeSlider = QSlider(Qt.Horizontal)
         self.volumeSlider.setRange(0, 100)
         self.volumeSlider.setValue(50)  # Default volume
-        # Set fixed width for the volume slider
         self.volumeSlider.setFixedWidth(100)
-        self.volumeSlider.valueChanged.connect(self.mediaPlayer.setVolume)
+        self.volumeSlider.valueChanged.connect(self.set_volume)
         controls_layout.addWidget(self.volumeSlider)
 
         # Add stretch to push everything to the left
         controls_layout.addStretch()
 
         parent_layout.addLayout(controls_layout)
+
+    def set_volume(self, value):
+        """Set the audio volume."""
+        self.mediaPlayer.setVolume(value)
 
     def load_video(self, file_path):
         """
@@ -440,15 +490,48 @@ class VideoPlayer(QWidget):
         Args:
             file_path (str): Path to the video file
         """
-        self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
+        if not os.path.exists(file_path):
+            QMessageBox.critical(
+                self, "Error", f"File not found: {file_path}")
+            return
+
+        # Create QMediaContent with local file URL
+        media = QMediaContent(QUrl.fromLocalFile(os.path.abspath(file_path)))
+        
+        # Set the media and verify it was loaded
+        self.mediaPlayer.setMedia(media)
+        
+        # Initialize OpenCV capture
         self.cap = cv2.VideoCapture(file_path)
         if not self.cap.isOpened():
             QMessageBox.critical(
                 self, "Error", "Failed to open video with OpenCV.")
-        else:
-            # Start playback automatically
-            self.mediaPlayer.play()
-            self.playButton.setIcon(generateIcon("media-playback-pause"))
+            return
+
+        # Update screenshot button state
+        self.update_screenshot_button_state()
+
+        # Start playback automatically
+        self.mediaPlayer.play()
+        
+        # Update play button icon
+        self.playButton.setIcon(generateIcon("media-playback-pause"))
+        
+        # Log media status for debugging
+        self._log_media_status()
+
+    def _log_media_status(self):
+        """Log media player status for debugging."""
+        status = self.mediaPlayer.mediaStatus()
+        state = self.mediaPlayer.state()
+        error = self.mediaPlayer.error()
+        
+        print(f"Media Status: {status}")
+        print(f"Player State: {state}")
+        print(f"Current Volume: {self.mediaPlayer.volume()}")
+        print(f"Media Player Available: {self.mediaPlayer.availability()}")
+        if error != QMediaPlayer.NoError:
+            print(f"Error: {error} - {self.mediaPlayer.errorString()}")
 
     def toggle_playback(self):
         """Toggle between play and pause."""
@@ -482,6 +565,8 @@ class VideoPlayer(QWidget):
         """Handle media state changes."""
         if state == QMediaPlayer.StoppedState:
             self.playButton.setIcon(generateIcon("media-playback-start"))
+        elif state == QMediaPlayer.PlayingState:
+            self._log_media_status()  # Log status when playing starts
 
     def ms_to_time(self, ms):
         """Convert milliseconds to hh:mm:ss:ms format."""
@@ -507,6 +592,14 @@ class VideoPlayer(QWidget):
 
     def take_screenshot(self):
         """Captures the current frame as a high-quality screenshot."""
+        if not self.cap or not self.cap.isOpened():
+            QMessageBox.warning(
+                self,
+                "No Video Loaded",
+                "Please load a video before attempting to take a screenshot."
+            )
+            return
+
         try:
             # Capture and save the screenshot
             frame, current_position = self.capture_frame()
@@ -514,6 +607,12 @@ class VideoPlayer(QWidget):
 
             # Process the screenshot (crop and upscale)
             processing_path = self.process_screenshot(temp_screenshot)
+
+            # If processing_path is None, upscaling is happening asynchronously
+            if processing_path is None:
+                # Cleanup the temporary screenshot - upscaling thread will handle the rest
+                self.cleanup_temporary_files(temp_screenshot, None)
+                return
 
             # Save the final screenshot
             final_path = self.save_final_screenshot(
@@ -529,14 +628,12 @@ class VideoPlayer(QWidget):
                 )
 
         except VideoProcessingError as e:
-            QMessageBox.critical(
-                self, "Error", str(e))
+            QMessageBox.critical(self, "Error", str(e))
         except UpscaleError as e:
-            QMessageBox.critical(
-                self, "Upscaling Error", str(e))
+            QMessageBox.critical(self, "Upscaling Error", str(e))
         except IOError as e:
-            QMessageBox.critical(
-                self, "File Error", f"Failed to process image: {str(e)}")
+            QMessageBox.critical(self, "File Error",
+                                 f"Failed to process image: {str(e)}")
 
     def capture_frame(self):
         """
@@ -605,8 +702,8 @@ class VideoPlayer(QWidget):
                 raise VideoProcessingError(
                     "Failed to load image for upscaling.")
             self.start_upscaling_thread(img, selected_model)
-            # Upscaling will be handled asynchronously
-            raise VideoProcessingError("Upscaling in progress. Please wait.")
+            # Return None to indicate async processing is happening
+            return None
 
         return processing_path
 
@@ -618,6 +715,12 @@ class VideoPlayer(QWidget):
             img: Image to upscale.
             selected_model: Model selected for upscaling.
         """
+        # Clean up any existing thread
+        if self.upscale_thread:
+            self.upscale_thread.quit()
+            self.upscale_thread.wait()
+            self.upscale_thread = None
+
         # Now we'll ask for the final save location
         default_filename = f"enhanced_screenshot_{self.ms_to_time(self.mediaPlayer.position())}.png"
         final_path, _ = QFileDialog.getSaveFileName(
@@ -717,6 +820,8 @@ class VideoPlayer(QWidget):
         """
         if self.cap and self.cap.isOpened():
             self.cap.release()
+            self.cap = None
+            self.update_screenshot_button_state()
         event.accept()
 
     def toggle_crop(self, state):
@@ -790,16 +895,48 @@ class VideoPlayer(QWidget):
             progress_dialog (QProgressDialog): Progress dialog to close
         """
         try:
-            # Close progress dialog
-            progress_dialog.close()
+            # Close progress dialog first
+            if progress_dialog and progress_dialog.isVisible():
+                progress_dialog.close()
 
             if result is None:
                 raise UpscaleError("Upscaling failed: No output received")
 
+            # Ensure the file extension is supported
+            file_ext = os.path.splitext(final_path)[1].lower()
+            if not file_ext:
+                final_path += '.png'  # Add default extension if none provided
+                file_ext = '.png'
+            
+            # Convert BGR to RGB for certain formats
+            if file_ext in ['.jpg', '.jpeg']:
+                result = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+
             # Save the upscaled image
-            if not cv2.imwrite(final_path, result):
+            success = cv2.imwrite(final_path, result)
+            if not success:
+                # Try alternative approach for problematic formats
+                try:
+                    from PIL import Image
+                    import numpy as np
+                    # Convert from BGR to RGB for PIL
+                    rgb_img = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+                    img_pil = Image.fromarray(rgb_img)
+                    img_pil.save(final_path)
+                    success = True
+                except Exception as e:
+                    raise VideoProcessingError(
+                        f"Failed to save image using alternative method: {str(e)}")
+
+            if not success:
                 raise VideoProcessingError(
                     f"Failed to save image to {final_path}")
+
+            # Clean up the upscale thread
+            if self.upscale_thread:
+                self.upscale_thread.quit()
+                self.upscale_thread.wait()
+                self.upscale_thread = None
 
             # Show success message
             QMessageBox.information(
@@ -814,12 +951,6 @@ class VideoPlayer(QWidget):
                 "Error",
                 str(e)
             )
-        except (IOError, OSError) as e:
-            QMessageBox.critical(
-                self,
-                "File Error",
-                f"Failed to save upscaled image: {str(e)}"
-            )
 
     def handle_upscale_error(self, error_message, progress_dialog):
         """
@@ -830,7 +961,14 @@ class VideoPlayer(QWidget):
             progress_dialog (QProgressDialog): Progress dialog to close
         """
         # Close progress dialog
-        progress_dialog.close()
+        if progress_dialog and progress_dialog.isVisible():
+            progress_dialog.close()
+
+        # Clean up the upscale thread
+        if self.upscale_thread:
+            self.upscale_thread.quit()
+            self.upscale_thread.wait()
+            self.upscale_thread = None
 
         # Show error message
         QMessageBox.critical(
@@ -838,3 +976,19 @@ class VideoPlayer(QWidget):
             "Upscaling Error",
             f"An error occurred during upscaling:\n{error_message}"
         )
+
+    def _handle_error(self, error):
+        """Handle media player errors."""
+        if error != QMediaPlayer.NoError:
+            error_msg = f"Media Player Error: {error} - {self.mediaPlayer.errorString()}"
+            print(error_msg)  # Print to console for debugging
+            QMessageBox.critical(self, "Error", error_msg)
+
+    def update_screenshot_button_state(self):
+        """Enable or disable screenshot button based on video state."""
+        has_video = self.cap is not None and self.cap.isOpened()
+        self.screenshotButton.setEnabled(has_video)
+        if not has_video:
+            self.screenshotButton.setToolTip("Load a video first to take screenshots")
+        else:
+            self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")

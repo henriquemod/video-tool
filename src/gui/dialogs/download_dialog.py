@@ -13,8 +13,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QThread, pyqtSignal, QStandardPaths
 
-
 import yt_dlp
+from ...exceptions import DownloadError
 
 
 class VideoItem:
@@ -118,22 +118,24 @@ class DownloadThread(QThread):
                 }
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([video.url])
+                    try:
+                        ydl.download([video.url])
+                    except yt_dlp.utils.DownloadError as e:
+                        raise DownloadError(str(e), url=video.url) from e
+                    except Exception as e:
+                        raise DownloadError(
+                            f"Download failed: {str(e)}", url=video.url
+                        ) from e
 
             self.finished.emit(
                 True, f"Successfully downloaded {total_videos} videos!"
             )
-        except yt_dlp.utils.DownloadError as e:
+        except DownloadError as e:
             self.finished.emit(False, str(e))
         except (OSError, IOError) as e:
-            # Handle file system related errors
             self.finished.emit(False, f"File system error: {str(e)}")
-        except ValueError as e:
-            # Handle value-related errors
-            self.finished.emit(False, f"Value error: {str(e)}")
-        except RuntimeError as e:
-            # Handle runtime-specific errors
-            self.finished.emit(False, f"Runtime error: {str(e)}")
+        except Exception as e:  # Catch any unexpected errors
+            self.finished.emit(False, f"Unexpected error: {str(e)}")
 
 
 class DownloadDialog(QDialog):

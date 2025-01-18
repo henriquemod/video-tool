@@ -3,12 +3,14 @@
     "absl",
     "addict",
     "archs",
+    "ascontiguousarray",
     "basicsr",
     "certifi",
     "charset",
     "contourpy",
     "cycler",
     "dateutil",
+    "Dont",
     "ESRGAN",
     "facexlib",
     "filelock",
@@ -24,6 +26,7 @@
     "imwrite",
     "Jinja",
     "kiwisolver",
+    "lanczos",
     "Lanczos",
     "llvmlite",
     "lmdb",
@@ -50,6 +53,7 @@
     "scipy",
     "SRCNN",
     "Swin",
+    "swinir",
     "sympy",
     "tensorboard",
     "tifffile",
@@ -58,6 +62,7 @@
     "tqdm",
     "upsampler",
     "upscaler",
+    "upscalers",
     "urllib",
     "venv",
     "Werkzeug",
@@ -70,6 +75,6 @@
     "venv",
     "**/venv/**",
     ".git",
-    "your-folder-to-ignore/**"  
+    "your-folder-to-ignore/**"
   ]
 }

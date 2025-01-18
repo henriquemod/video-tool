@@ -19,10 +19,15 @@ Usage:
 
 import sys
 import os
-from src.app import run_app
 
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
+# Apply torchvision compatibility patch before importing any other modules
+from src.utils.torchvision_patch import apply_patch
+apply_patch()
+
+from src.app import run_app
 
 if __name__ == "__main__":
     run_app()

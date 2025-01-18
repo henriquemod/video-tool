@@ -6,13 +6,15 @@ aspect ratio control, and grid overlay support for precise image cropping operat
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
-from ..utils.temp_file_manager import temp_manager
+
+from ...utils.temp_file_manager import temp_manager
+from ...exceptions import CropError
 
 
 class CustomRubberBand(QtWidgets.QRubberBand):
     """
     Enhanced rubber band widget with grid overlay for image cropping.
-    
+
     Provides visual guides including rule of thirds grid and custom border styling.
     """
 
@@ -23,7 +25,7 @@ class CustomRubberBand(QtWidgets.QRubberBand):
     def paint_event(self, _):
         """
         Custom paint event to draw dashed border and grid.
-        
+
         Args:
             _: Unused paint event parameter
         """
@@ -109,7 +111,8 @@ class CropDialog(QtWidgets.QDialog):
             "3:2",
             "2:3 (Portrait)"
         ])
-        self.aspect_combo.currentTextChanged.connect(self.on_aspect_ratio_changed)
+        self.aspect_combo.currentTextChanged.connect(
+            self.on_aspect_ratio_changed)
         aspect_layout.addWidget(aspect_label)
         aspect_layout.addWidget(self.aspect_combo)
         aspect_layout.addStretch()
@@ -152,7 +155,7 @@ class CropDialog(QtWidgets.QDialog):
     def eventFilter(self, obj, event):
         """
         Handle mouse events from the image label.
-        
+
         Args:
             obj: Object that triggered the event
             event: Event to be processed
@@ -177,7 +180,7 @@ class CropDialog(QtWidgets.QDialog):
     def handle_mouse_press(self, event):
         """
         Handle mouse press events for selection creation and movement.
-        
+
         Args:
             event: Mouse event containing position information
         """
@@ -187,9 +190,9 @@ class CropDialog(QtWidgets.QDialog):
             if not self.image_label.rect().contains(pos):
                 return
 
-            if (hasattr(self, 'selected_rect') and 
-                self.selected_rect is not None and 
-                self.selected_rect.contains(pos)):
+            if (hasattr(self, 'selected_rect') and
+                self.selected_rect is not None and
+                    self.selected_rect.contains(pos)):
                 self.is_dragging = True
                 self.drag_start_pos = pos
                 self.initial_rect = QtCore.QRect(self.selected_rect)
@@ -202,7 +205,7 @@ class CropDialog(QtWidgets.QDialog):
     def handle_mouse_move(self, event):
         """
         Handle mouse movement for selection resizing and moving.
-        
+
         Args:
             event: Mouse event containing position information
         """
@@ -243,7 +246,7 @@ class CropDialog(QtWidgets.QDialog):
     def handle_mouse_release(self, event):
         """
         Handle mouse release events for selection completion.
-        
+
         Args:
             event: Mouse event containing position information
         """
@@ -295,14 +298,15 @@ class CropDialog(QtWidgets.QDialog):
             temp_path = temp_manager.get_temp_path(
                 prefix="cropped_", suffix=".png")
             if not cropped_pixmap.save(str(temp_path)):
-                raise RuntimeError("Failed to save cropped image")
+                raise CropError("Failed to save cropped image")
 
             self.result_path = temp_path
             self.accept()
 
-        except RuntimeError as err:
-            QtWidgets.QMessageBox.critical(
-                self, "Error", f"Failed to crop image: {str(err)}")
+        except Exception as e:
+            if not isinstance(e, CropError):
+                raise CropError(f"Failed to crop image: {str(e)}")
+            raise
 
     def get_result_path(self):
         """Return the path of the cropped image."""
@@ -311,7 +315,7 @@ class CropDialog(QtWidgets.QDialog):
     def on_aspect_ratio_changed(self, text):
         """
         Handle aspect ratio changes from the combo box.
-        
+
         Args:
             text (str): Selected aspect ratio text from combo box
         """
@@ -322,7 +326,8 @@ class CropDialog(QtWidgets.QDialog):
             try:
                 # Extract ratio values from text (e.g., "16:9" -> 16/9)
                 if ":" in text:
-                    width, height = map(float, text.split("(")[0].strip().split(":"))
+                    width, height = map(float, text.split(
+                        "(")[0].strip().split(":"))
                     self.current_aspect_ratio = width / height
                 elif text == "1:1 (Square)":
                     self.current_aspect_ratio = 1.0

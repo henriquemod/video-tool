@@ -1,18 +1,18 @@
 """
-video_processing_error.py
+Module: crop_error.py
 
-This module defines custom exception classes for handling errors related to video processing operations.
+Provides custom exception class for image cropping related errors.
 """
 
 from .base_exception import MultimediaAssistantError
 
 
-class VideoProcessingError(MultimediaAssistantError):
-    """Custom exception for video processing related errors"""
+class CropError(MultimediaAssistantError):
+    """Custom exception for image cropping related errors"""
 
     def __init__(self, message: str, details: str = None):
         """
-        Initialize VideoProcessingError.
+        Initialize CropError.
 
         Args:
             message (str): Main error message
