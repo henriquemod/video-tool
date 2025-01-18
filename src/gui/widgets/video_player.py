@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QFileDialog, QMessageBox, QDialog, QCheckBox, QComboBox,
     QProgressDialog
 )
-from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent, QMediaPlaylist
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import QUrl, Qt, QDir, QThread, pyqtSignal
 
@@ -868,8 +868,33 @@ class VideoPlayer(QWidget):
             if result is None:
                 raise UpscaleError("Upscaling failed: No output received")
 
+            # Ensure the file extension is supported
+            file_ext = os.path.splitext(final_path)[1].lower()
+            if not file_ext:
+                final_path += '.png'  # Add default extension if none provided
+                file_ext = '.png'
+            
+            # Convert BGR to RGB for certain formats
+            if file_ext in ['.jpg', '.jpeg']:
+                result = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+
             # Save the upscaled image
-            if not cv2.imwrite(final_path, result):
+            success = cv2.imwrite(final_path, result)
+            if not success:
+                # Try alternative approach for problematic formats
+                try:
+                    from PIL import Image
+                    import numpy as np
+                    # Convert from BGR to RGB for PIL
+                    rgb_img = cv2.cvtColor(result, cv2.COLOR_BGR2RGB)
+                    img_pil = Image.fromarray(rgb_img)
+                    img_pil.save(final_path)
+                    success = True
+                except Exception as e:
+                    raise VideoProcessingError(
+                        f"Failed to save image using alternative method: {str(e)}")
+
+            if not success:
                 raise VideoProcessingError(
                     f"Failed to save image to {final_path}")
 
@@ -891,12 +916,6 @@ class VideoPlayer(QWidget):
                 self,
                 "Error",
                 str(e)
-            )
-        except (IOError, OSError) as e:
-            QMessageBox.critical(
-                self,
-                "File Error",
-                f"Failed to save upscaled image: {str(e)}"
             )
 
     def handle_upscale_error(self, error_message, progress_dialog):
