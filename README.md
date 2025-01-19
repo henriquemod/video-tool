@@ -67,37 +67,52 @@ A powerful desktop application for processing, enhancing, and manipulating image
 ## 🚀 Installation
 
 1. Clone the repository:
-```bash:requirements.amd.txt
+```bash
 git clone https://github.com/henriquemod/video-tool.git
 cd video-tool
 ```
 
-2. Create a virtual environment:
+2. Create and activate a virtual environment:
+
+**On Linux/MacOS:**
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 ```
 
-3. Install base requirements:
+**On Windows:**
 ```bash
-pip install -r requirements.txt
+python -m venv venv
+venv\Scripts\activate
 ```
 
-### GPU Support (Optional)
+3. Run the installation script:
 
-#### For NVIDIA GPUs:
-If you have an NVIDIA GPU, install CUDA-enabled PyTorch:
+**On Linux/MacOS:**
 ```bash
-pip install -r requirements.nvidia.txt
+chmod +x scripts/install.sh  # Make the script executable
+./scripts/install.sh
 ```
 
-#### For AMD GPUs:
-If you have an AMD GPU on Linux with ROCm support:
+**On Windows:**
 ```bash
-pip install -r requirements.amd.txt
+scripts\install.bat
 ```
 
-Note: The base installation includes CPU-only versions of PyTorch. Installing GPU-specific requirements will override this with the appropriate GPU-enabled version.
+4. Run the application:
+```bash
+python main.py
+```
+
+### ⚠️ Important Note for Windows Users
+
+If you're experiencing issues playing videos on Windows, you likely need to install the necessary media codecs. We recommend installing **K-Lite Codec Pack**:
+
+1. Download K-Lite Codec Pack from the [official website](https://codecguide.com/download_kl.htm)
+2. Install using the default settings
+3. Done
+
+This will ensure proper playback of various video formats in the application.
 
 ## 💻 Usage
 
