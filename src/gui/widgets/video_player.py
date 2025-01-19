@@ -682,13 +682,28 @@ class VideoPlayer(QWidget):
         elif state == QMediaPlayer.PlayingState:
             self._log_media_status()  # Log status when playing starts
 
-    def ms_to_time(self, ms):
-        """Convert milliseconds to hh:mm:ss:ms format."""
+    def ms_to_time(self, ms, for_filename=False):
+        """
+        Convert milliseconds to time format.
+        
+        Args:
+            ms (int): Milliseconds to convert
+            for_filename (bool): If True, returns filename-safe format
+        
+        Returns:
+            str: Formatted time string
+        """
         hours = ms // 3600000
         minutes = (ms % 3600000) // 60000
         seconds = (ms % 60000) // 1000
         milliseconds = (ms % 1000) // 10
-        return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}:{int(milliseconds):02}"
+        
+        if for_filename:
+            # Use underscores and hyphens instead of colons for filenames
+            return f"{int(hours):02d}-{int(minutes):02d}-{int(seconds):02d}-{int(milliseconds):02d}"
+        else:
+            # Regular format for display
+            return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}:{int(milliseconds):02}"
 
     def set_playback_speed(self, value):
         """Set the playback speed."""
@@ -835,13 +850,20 @@ class VideoPlayer(QWidget):
             self.upscale_thread.wait()
             self.upscale_thread = None
 
-        # Now we'll ask for the final save location
-        default_filename = f"enhanced_screenshot_{self.ms_to_time(self.mediaPlayer.position())}.png"
+        # Create filename-safe timestamp
+        timestamp = self.ms_to_time(self.mediaPlayer.position(), for_filename=True)
+        default_filename = f"enhanced_screenshot_{timestamp}.png"
+        
+        # Get the Pictures directory
+        pictures_dir = QStandardPaths.writableLocation(QStandardPaths.PicturesLocation)
+        
+        # Create the full path
+        save_path = os.path.join(pictures_dir, default_filename)
+
         final_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Enhanced Screenshot",
-            os.path.join(QStandardPaths.writableLocation(
-                QStandardPaths.PicturesLocation), default_filename),
+            save_path,
             "PNG Images (*.png);;All Files (*)"
         )
 
@@ -888,21 +910,35 @@ class VideoPlayer(QWidget):
         Returns:
             Path to the final saved screenshot.
         """
+        # Use filename-safe format for the timestamp
         if processing_path.suffix == ".png":
-            default_filename = f"screenshot_{current_position}.png"
+            default_filename = f"screenshot_{self.ms_to_time(current_position, for_filename=True)}.png"
         else:
-            default_filename = f"screenshot_{current_position}{processing_path.suffix}"
+            default_filename = f"screenshot_{self.ms_to_time(current_position, for_filename=True)}{processing_path.suffix}"
 
+        # Get the Pictures directory
+        pictures_dir = QStandardPaths.writableLocation(QStandardPaths.PicturesLocation)
+        
+        # Ensure the path is valid for Windows
+        save_path = os.path.join(pictures_dir, default_filename)
+        
         final_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Screenshot",
-            os.path.join(QStandardPaths.writableLocation(
-                QStandardPaths.PicturesLocation), default_filename),
+            save_path,
             "PNG Images (*.png);;All Files (*)"
         )
 
         if final_path:
-            shutil.copy2(processing_path, final_path)
+            try:
+                shutil.copy2(str(processing_path), final_path)
+            except IOError as e:
+                QMessageBox.critical(
+                    self,
+                    "Save Error",
+                    f"Failed to save screenshot: {str(e)}\nPath: {final_path}"
+                )
+                return None
 
         return final_path
 
