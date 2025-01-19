@@ -22,6 +22,8 @@ ICON_MAP = {
     'folder-open': 'fa5s.folder-open',
     'document-save': 'fa5s.save',
     'camera-photo': 'fa5s.camera',
+    "zoom-fit-best": "fa5s.expand-arrows-alt",
+    "view-fullscreen": "fa5s.expand-arrows-alt",
 }
 
 def generateIcon(icon_name: str, fromTheme: bool = False) -> QIcon:
