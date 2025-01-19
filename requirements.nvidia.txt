@@ -1,0 +1,4 @@
+# NVIDIA GPU-specific requirements - CUDA 11.8
+--index-url https://download.pytorch.org/whl/cu118
+torch
+torchvision

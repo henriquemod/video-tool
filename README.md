@@ -67,24 +67,37 @@ A powerful desktop application for processing, enhancing, and manipulating image
 ## 🚀 Installation
 
 1. Clone the repository:
-
-```bash
+```bash:requirements.amd.txt
 git clone https://github.com/henriquemod/video-tool.git
 cd video-tool
 ```
 
 2. Create a virtual environment:
-
 ```bash
 python -m venv venv
-source venv/bin/activate # On Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install dependencies:
-
+3. Install base requirements:
 ```bash
 pip install -r requirements.txt
 ```
+
+### GPU Support (Optional)
+
+#### For NVIDIA GPUs:
+If you have an NVIDIA GPU, install CUDA-enabled PyTorch:
+```bash
+pip install -r requirements.nvidia.txt
+```
+
+#### For AMD GPUs:
+If you have an AMD GPU on Linux with ROCm support:
+```bash
+pip install -r requirements.amd.txt
+```
+
+Note: The base installation includes CPU-only versions of PyTorch. Installing GPU-specific requirements will override this with the appropriate GPU-enabled version.
 
 ## 💻 Usage
 

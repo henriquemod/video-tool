@@ -171,7 +171,33 @@ class VideoPlayer(QWidget):
 
     def __init__(self):
         super().__init__()
-
+        
+        # Add comprehensive media system check for Windows
+        if sys.platform == 'win32':
+            # Check codecs first
+            codec_status = self.check_video_codecs()
+            if codec_status:
+                print("\nCodec Status:")
+                for codec, status in codec_status.items():
+                    print(f"{codec}: {'Installed' if status else 'Missing'}")
+            
+            # Check media service
+            from PyQt5.QtMultimedia import QMediaPlayer
+            test_player = QMediaPlayer()
+            
+            # Check media service availability
+            availability = test_player.availability()
+            if availability == QMediaPlayer.ServiceMissingError:
+                print("WARNING: Media service is not available!")
+                print("Please check DirectShow installation and codecs on Windows")
+                QMessageBox.warning(self, "Media Service Warning",
+                    "Media playback service is not available.\n\n"
+                    "Please ensure you have the necessary codecs installed:\n"
+                    "1. Install K-Lite Codec Pack (Basic)\n"
+                    "2. Install LAV Filters\n"
+                    "3. Install FFmpeg using winget or chocolatey"
+                )
+        
         # Initialize instance attributes
         self.outputFolder = QDir.currentPath()
         self.ai_capable = self.check_ai_capabilities()
@@ -268,40 +294,44 @@ class VideoPlayer(QWidget):
     def check_ai_capabilities(self):
         """Check if system can run AI upscaling."""
         try:
+            # First check if torch is properly installed with CUDA
+            if not hasattr(torch, 'cuda'):
+                print("PyTorch CUDA support not available - reinstall PyTorch with CUDA support")
+                print("Run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118")
+                return False
+
             # Check for GPU support
             has_cuda = torch.cuda.is_available()
-            has_mps = hasattr(
-                torch.backends, 'mps') and torch.backends.mps.is_available()
+            has_mps = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
 
             if has_cuda:
-                gpu_memory = torch.cuda.get_device_properties(
-                    0).total_memory / 1024**3  # Convert to GB
-                print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
-                return True
+                try:
+                    # Test CUDA functionality
+                    test_tensor = torch.tensor([1.0], device='cuda')
+                    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3  # Convert to GB
+                    print(f"CUDA GPU detected with {gpu_memory:.2f}GB memory")
+                    print(f"CUDA Version: {torch.version.cuda}")
+                    return True
+                except RuntimeError as e:
+                    print(f"CUDA initialization error: {str(e)}")
+                    print("Please ensure NVIDIA drivers are up to date")
+                    print("Download latest drivers from: https://www.nvidia.com/download/index.aspx")
+                    return False
             elif has_mps:
                 print("Apple Metal GPU detected")
                 return True
             else:
                 print("No compatible GPU detected, AI upscaling will use CPU (slow)")
+                print("For NVIDIA GPUs, please install PyTorch with CUDA support:")
+                print("pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118")
                 return False
 
-        except (RuntimeError, AttributeError) as e:
-            # RuntimeError: CUDA initialization errors
-            # AttributeError: Missing torch attributes/methods
+        except Exception as e:
             print(f"Error checking AI capabilities: {str(e)}")
-            print("To enable AI upscaling, install required packages with:")
-            print(
-                "pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
-            return False
-        except (ImportError, OSError) as e:
-            # Handle missing dependencies and system-level errors
-            print(f"Error checking AI capabilities: {str(e)}")
-            if isinstance(e, ImportError):
-                print("To enable AI upscaling, install required packages with:")
-                print(
-                    "pip install numpy==1.24.3 torch==2.0.1 torchvision==0.15.2 basicsr realesrgan")
-            else:
-                print("Please ensure your GPU drivers are up to date")
+            print("\nTo enable GPU acceleration on Windows with NVIDIA GPUs:")
+            print("1. Install NVIDIA drivers from https://www.nvidia.com/download/index.aspx")
+            print("2. Install PyTorch with CUDA support:")
+            print("   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118")
             return False
 
     def setup_playback_controls(self, parent_layout):
@@ -495,11 +525,61 @@ class VideoPlayer(QWidget):
                 self, "Error", f"File not found: {file_path}")
             return
 
+        # Log video file details
+        try:
+            file_size = os.path.getsize(file_path) / (1024 * 1024)  # Size in MB
+            print(f"\nAttempting to load video:")
+            print(f"Path: {file_path}")
+            print(f"Size: {file_size:.2f} MB")
+            
+            # Check video file with OpenCV first
+            test_cap = cv2.VideoCapture(file_path)
+            if test_cap.isOpened():
+                fps = test_cap.get(cv2.CAP_PROP_FPS)
+                width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                print(f"OpenCV Info - FPS: {fps}, Resolution: {width}x{height}")
+                test_cap.release()
+            else:
+                print("Warning: OpenCV cannot open the video file")
+        except Exception as e:
+            print(f"Error checking video file: {str(e)}")
+
         # Create QMediaContent with local file URL
-        media = QMediaContent(QUrl.fromLocalFile(os.path.abspath(file_path)))
+        url = QUrl.fromLocalFile(os.path.abspath(file_path))
+        media = QMediaContent(url)
+        
+        print("\nMedia Content Info:")
+        print(f"URL: {url.toString()}")
+        print(f"Is Local: {url.isLocalFile()}")
         
         # Set the media and verify it was loaded
         self.mediaPlayer.setMedia(media)
+        
+        # Wait briefly for media to be processed
+        import time
+        time.sleep(0.5)  # Give media player time to process
+        
+        # Check media status
+        status = self.mediaPlayer.mediaStatus()
+        print(f"\nMedia Status After Loading: {self._get_status_string(status)}")
+        
+        # Check for media player errors
+        error = self.mediaPlayer.error()
+        if error != QMediaPlayer.NoError:
+            error_msg = f"Media Player Error: {self._get_error_string(error)}"
+            print(f"\nError Details: {error_msg}")
+            print(f"Error String: {self.mediaPlayer.errorString()}")
+            
+            # Show detailed error to user
+            QMessageBox.critical(self, "Media Error", 
+                f"Failed to load video:\n\n{error_msg}\n\n"
+                f"System Info:\n"
+                f"- OS: {sys.platform}\n"
+                f"- Qt Version: {QT_VERSION_STR}\n\n"
+                f"Please ensure you have the necessary video codecs installed."
+            )
+            return
         
         # Initialize OpenCV capture
         self.cap = cv2.VideoCapture(file_path)
@@ -517,21 +597,55 @@ class VideoPlayer(QWidget):
         # Update play button icon
         self.playButton.setIcon(generateIcon("media-playback-pause"))
         
-        # Log media status for debugging
+        # Log final status
         self._log_media_status()
 
+    def _get_status_string(self, status):
+        """Convert QMediaPlayer status to string for debugging."""
+        status_map = {
+            QMediaPlayer.UnknownMediaStatus: "Unknown",
+            QMediaPlayer.NoMedia: "No Media",
+            QMediaPlayer.LoadingMedia: "Loading",
+            QMediaPlayer.LoadedMedia: "Loaded",
+            QMediaPlayer.StalledMedia: "Stalled",
+            QMediaPlayer.BufferingMedia: "Buffering",
+            QMediaPlayer.BufferedMedia: "Buffered",
+            QMediaPlayer.EndOfMedia: "End of Media",
+            QMediaPlayer.InvalidMedia: "Invalid"
+        }
+        return status_map.get(status, f"Unknown Status: {status}")
+
+    def _get_error_string(self, error):
+        """Convert QMediaPlayer error to descriptive string."""
+        error_map = {
+            QMediaPlayer.NoError: "No Error",
+            QMediaPlayer.ResourceError: "Resource Error (missing codecs or file access issue)",
+            QMediaPlayer.FormatError: "Format Error (unsupported format)",
+            QMediaPlayer.NetworkError: "Network Error",
+            QMediaPlayer.AccessDeniedError: "Access Denied",
+            QMediaPlayer.ServiceMissingError: "Media Service Missing (check DirectShow installation)",
+        }
+        return error_map.get(error, f"Unknown Error: {error}")
+
     def _log_media_status(self):
-        """Log media player status for debugging."""
+        """Log detailed media player status for debugging."""
         status = self.mediaPlayer.mediaStatus()
         state = self.mediaPlayer.state()
         error = self.mediaPlayer.error()
         
-        print(f"Media Status: {status}")
+        print("\nDetailed Media Player Status:")
+        print(f"Media Status: {self._get_status_string(status)}")
         print(f"Player State: {state}")
         print(f"Current Volume: {self.mediaPlayer.volume()}")
         print(f"Media Player Available: {self.mediaPlayer.availability()}")
+        print(f"Media Duration: {self.mediaPlayer.duration()} ms")
+        print(f"Is Seekable: {self.mediaPlayer.isSeekable()}")
+        print(f"Is Audio Available: {self.mediaPlayer.isAudioAvailable()}")
+        print(f"Is Video Available: {self.mediaPlayer.isVideoAvailable()}")
+        
         if error != QMediaPlayer.NoError:
-            print(f"Error: {error} - {self.mediaPlayer.errorString()}")
+            print(f"Error: {self._get_error_string(error)}")
+            print(f"Error String: {self.mediaPlayer.errorString()}")
 
     def toggle_playback(self):
         """Toggle between play and pause."""
@@ -992,3 +1106,67 @@ class VideoPlayer(QWidget):
             self.screenshotButton.setToolTip("Load a video first to take screenshots")
         else:
             self.screenshotButton.setToolTip("Take a screenshot (Ctrl+S)")
+
+    def check_video_codecs(self):
+        """Check for required video codecs and DirectShow filters."""
+        import subprocess
+        import winreg
+        
+        codec_status = {
+            'directshow': False,
+            # 'ffmpeg': False,
+            # 'lav_filters': False,
+            'k_lite': False
+        }
+        
+        try:
+            # Check for FFmpeg
+            # try:
+            #     result = subprocess.run(['ffmpeg', '-version'], 
+            #                          capture_output=True, 
+            #                          text=True)
+            #     codec_status['ffmpeg'] = result.returncode == 0
+            # except FileNotFoundError:
+            #     print("FFmpeg not found in system PATH")
+            
+            # Check for LAV Filters
+            # try:
+            #     winreg.OpenKey(winreg.HKEY_CLASSES_ROOT,
+            #                   r'CLSID\{B98D13E7-55DB-4385-A33D-09FD1BA26338}')
+            #     codec_status['lav_filters'] = True
+            # except WindowsError:
+            #     print("LAV Filters not found")
+            
+            # Check for K-Lite Codec Pack
+            try:
+                winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                              r'SOFTWARE\WOW6432Node\KLCodecPack')
+                codec_status['k_lite'] = True
+            except WindowsError:
+                print("K-Lite Codec Pack not found")
+            
+            # Check DirectShow filters
+            try:
+                winreg.OpenKey(winreg.HKEY_CLASSES_ROOT,
+                              r'DirectShow\MediaObjects')
+                codec_status['directshow'] = True
+            except WindowsError:
+                print("DirectShow filters not properly registered")
+            
+            missing_components = [k for k, v in codec_status.items() if not v]
+            if missing_components:
+                print("\nMissing or unregistered components:")
+                print('\n'.join(f"- {component}" for component in missing_components))
+                
+                QMessageBox.warning(self, "Missing Video Components",
+                    "This application requires the following components to be installed:\n\n"
+                    "1. K-Lite Codec Pack (Basic):\n"
+                    "   https://www.codecguide.com/download_k-lite_codec_pack_basic.htm\n\n"
+                    "The application may not work properly without these components."
+                )
+                
+            return codec_status
+            
+        except Exception as e:
+            print(f"Error checking codecs: {str(e)}")
+            return None
